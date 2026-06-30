@@ -33,6 +33,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: Read package version
+        id: package
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          MAJOR_MINOR=$(node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "major_minor=$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
+
       - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v5
@@ -44,6 +52,8 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
+            type=raw,value=${{ steps.package.outputs.version }},enable={{is_default_branch}}
+            type=raw,value=${{ steps.package.outputs.major_minor }},enable={{is_default_branch}}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push Docker image

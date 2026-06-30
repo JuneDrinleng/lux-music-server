@@ -1,5 +1,5 @@
 {
-  "name": "lx-music-sync-server",
+  "name": "lux-music-server",
   "version": "2.1.2",
   "private": true,
   "scripts": {
@@ -15,7 +15,7 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/lyswhut/lx-music-sync-server.git"
+    "url": "git+https://github.com/JuneDrinleng/lux-music-server.git"
   },
   "author": {
     "name": "lyswhut",
@@ -23,9 +23,9 @@
   },
   "license": "Apache-2.0",
   "bugs": {
-    "url": "https://github.com/lyswhut/lx-music-sync-server/issues"
+    "url": "https://github.com/JuneDrinleng/lux-music-server/issues"
   },
-  "homepage": "https://github.com/lyswhut/lx-music-sync-server#readme",
+  "homepage": "https://github.com/JuneDrinleng/lux-music-server#readme",
   "dependencies": {
     "bufferutil": "^4.0.8",
     "fastify": "^4.29.1",

@@ -1,6 +1,6 @@
-# LX Music Sync Server
+# Lux Music Sync Server
 
-LX Music 数据同步服务端。本项目目前用于收藏列表数据同步，类似桌面版的数据同步服务，只不过它现在是一个独立版的服务，可以将其部署到服务器上使用。
+Lux Music 数据同步服务端。本项目目前用于收藏列表数据同步，类似桌面版的数据同步服务，只不过它现在是一个独立版的服务，可以将其部署到服务器上使用。
 
 本项目需要有一些服务器操作经验的人使用，若遇到问题欢迎反馈。
 
@@ -109,12 +109,12 @@ pm2 startup
 
 代理需要配置两条规则：
 
-1. 代理链接 URL 根路径下所有子路径的 **WebSocket** 请求到 LX Sync 服务；
-2. 代理链接 URL 根路径下所有子路径的 **HTTP** 请求到 LX Sync 服务。
+1. 代理链接 URL 根路径下所有子路径的 **WebSocket** 请求到 Lux Music Sync 服务；
+2. 代理链接 URL 根路径下所有子路径的 **HTTP** 请求到 Lux Music Sync 服务。
 
 #### 配置
 
-编辑 Nginx 配置文件，在 `server` 下添加代理规则，如果你当前 `server` 块下只打算配置 LX Sync 服务，那么可以使用以下配置：
+编辑 Nginx 配置文件，在 `server` 下添加代理规则，如果你当前 `server` 块下只打算配置 Lux Music Sync 服务，那么可以使用以下配置：
 
 ```conf
 map $http_upgrade $connection_upgrade{
@@ -307,8 +307,8 @@ http://<服务器 IP>:9527/admin
 
 仓库内的 GitHub Actions 会在以下场景自动构建并推送 Docker Hub 镜像：
 
-- 推送到 `master`：发布 `latest`、`master`、`sha-*` 标签。
-- 推送版本 tag（例如 `v0.3.0`）：发布 `0.3.0`、`0.3`、`sha-*` 标签。
+- 推送到 `master`：发布 `latest`、`master`、`sha-*`、`package.json` 里的完整版本号（例如 `2.1.2`）以及主次版本号（例如 `2.1`）标签。`sha-*` 是提交级追踪标签，便于回滚到指定 commit。
+- 推送版本 tag（例如 `v2.1.2`）：发布 `2.1.2`、`2.1`、`sha-*` 标签。
 - 手动触发 `Docker Publish` workflow：按当前引用构建并推送。
 
 该 workflow 使用 GitHub Actions secrets：

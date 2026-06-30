@@ -25,7 +25,7 @@ ENV LOG_PATH=/server/data/logs
 # ENV LUX_BOOTSTRAP_TOKEN='change-me'
 # 可选：反向代理真实 IP 请求头。
 # ENV PROXY_HEADER='x-real-ip'
-# 可选：兼容 LX 连接码用户。
+# 可选：配置兼容旧客户端协议的连接码用户。
 # ENV LX_USER_user1='123.123'
 # ENV LX_USER_user2='{ "password": "123.456", "maxSnapshotNum": 10, "list.addMusicLocationType": "top" }'
 # 可选：自定义配置文件路径。
