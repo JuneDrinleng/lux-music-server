@@ -316,6 +316,6 @@ http://<服务器 IP>:9527/admin
 - `DOCKERHUB_USERNAME`
 - `DOCKERHUB_TOKEN`
 
-默认构建多架构镜像：`linux/amd64` 与 `linux/arm64`。
+默认构建 `linux/amd64` 镜像。若后续需要 ARM 服务器镜像，可在 workflow 中重新启用 `linux/arm64` 平台。
 
 也可以看此 Issue 提供的历史 Docker 解决方案：<https://github.com/lyswhut/lx-music-sync-server/issues/4>
