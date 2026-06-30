@@ -1,21 +1,17 @@
-import http, { type IncomingMessage } from 'node:http'
+import { type IncomingMessage } from 'node:http'
 import { WebSocketServer } from 'ws'
 import { registerLocalSyncEvent, callObj, sync } from './sync'
-import { authCode, authConnect } from './auth'
+import { authConnect } from './auth'
 import { getAddress, sendStatus, decryptMsg, encryptMsg } from '@/utils/tools'
 import { accessLog, startupLog, syncLog } from '@/utils/log4js'
 import { SYNC_CLOSE_CODE, SYNC_CODE } from '@/constants'
-import { getUserSpace, releaseUserSpace, getUserName, getServerId } from '@/user'
+import { getUserSpace, releaseUserSpace, getUserName } from '@/user'
 import { createMsg2call } from 'message2call'
+import { createApp } from './app'
+import { getServerStatus, setServerStatus } from './status'
 
 
-let status: LX.Sync.Status = {
-  status: false,
-  message: '',
-  address: [],
-  // code: '',
-  devices: [],
-}
+let status: LX.Sync.Status = getServerStatus()
 
 let host = 'http://localhost'
 
@@ -107,7 +103,7 @@ const handleUnconnection = (userName: string) => {
   releaseUserSpace(userName)
 }
 
-const authConnection = (req: http.IncomingMessage, callback: (err: string | null | undefined, success: boolean) => void) => {
+const authConnection = (req: IncomingMessage, callback: (err: string | null | undefined, success: boolean) => void) => {
   // console.log(req.headers)
   // // console.log(req.auth)
   // console.log(req._query.authCode)
@@ -126,32 +122,8 @@ function onSocketError(err: Error) {
 }
 
 const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Promise((resolve, reject) => {
-  const httpServer = http.createServer((req, res) => {
-    // console.log(req.url)
-    const endUrl = `/${req.url?.split('/').at(-1) ?? ''}`
-    let code
-    let msg
-    switch (endUrl) {
-      case '/hello':
-        code = 200
-        msg = SYNC_CODE.helloMsg
-        break
-      case '/id':
-        code = 200
-        msg = SYNC_CODE.idPrefix + getServerId()
-        break
-      case '/ah':
-        void authCode(req, res, lx.config.users)
-        break
-      default:
-        code = 401
-        msg = 'Forbidden'
-        break
-    }
-    if (!code) return
-    res.writeHead(code)
-    res.end(msg)
-  })
+  const app = createApp()
+  const httpServer = app.server
 
   wss = new WebSocketServer({
     noServer: true,
@@ -364,6 +336,7 @@ export const startServer = async(port: number, ip: string) => {
     status.status = true
     status.message = ''
     status.address = ip == '0.0.0.0' ? getAddress() : [ip]
+    setServerStatus(status)
 
     // void generateCode()
     // codeTools.start()
@@ -372,6 +345,7 @@ export const startServer = async(port: number, ip: string) => {
     status.status = false
     status.message = err.message
     status.address = []
+    setServerStatus(status)
     // status.code = ''
   })
   // .finally(() => {

@@ -6,6 +6,7 @@ import { initLogger } from '@/utils/log4js'
 import defaultConfig from './defaultConfig'
 import { ENV_PARAMS, File } from './constants'
 import { checkAndCreateDirSync } from './utils'
+import { initAccountStore } from './account/store'
 
 type ENV_PARAMS_Type = typeof ENV_PARAMS
 type ENV_PARAMS_Value_Type = ENV_PARAMS_Type[number]
@@ -181,6 +182,8 @@ const checkUserConfig = (users: LX.Config['users']) => {
 checkAndCreateDir(global.lx.logPath)
 checkAndCreateDir(global.lx.dataPath)
 checkAndCreateDir(global.lx.userPath)
+const accountStore = initAccountStore(global.lx.dataPath)
+global.lx.config.users = accountStore.getSyncUsers()
 checkUserConfig(global.lx.config.users)
 
 console.log(`Users:

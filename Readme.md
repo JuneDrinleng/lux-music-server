@@ -205,8 +205,9 @@ server {
 | `LOG_PATH` | 服务日志保存路径，默认保存在服务目录下的 `logs` 文件夹内。 |
 | `DATA_PATH` | 同步数据保存路径，默认保存在服务目录下的 `data` 文件夹内。 |
 | `MAX_SNAPSHOT_NUM` | 公共最大备份快照数。 |
-| `SERVER_NAME` | 同步服务名称。 |
 | `LIST_ADD_MUSIC_LOCATION_TYPE` | 公共添加歌曲到我的列表时的方式，可用值为 `top` 和 `bottom`。 |
+| `LUX_TOKEN_SECRET` | Web 后台登录 token 的签名密钥。生产环境建议设置固定随机值，避免容器重建后登录态全部失效。 |
+| `LUX_BOOTSTRAP_TOKEN` | 可选的初始化授权 token。通常不需要设置；首次访问 Web 后台会在没有管理员时引导创建管理员。 |
 | `LX_USER_` | 以 `LX_USER_` 开头的环境变量将被识别为用户配置，可用的配置语法为：<br />1. `LX_USER_user1='xxx'`；<br />2. `LX_USER_user1='{"password":"xxx"}'`。<br />其中 `LX_USER_` 会被去掉，剩下的 `user1` 为用户名，`xxx` 为用户密码（**连接码**）。<br />配置方式 1 为简写模式，只指定用户名及密码（链接码），其他配置使用公共配置。<br />配置方式 2 为 JSON 字符串格式，配置内容参考 `config.js`，由于该方式在变量名指定了用户名，所以 JSON 里的用户名是可选的。 |
 
 ### PM2 常用命令
@@ -218,12 +219,103 @@ server {
 
 ### Docker
 
-可以使用以下方式构建 docker 镜像（Dockerfile 用的是源码构建）：
+本项目提供 Dockerfile 与 `docker-compose.yml`，可直接构建镜像并部署到服务器。
+
+#### 构建镜像
+
+在 `lux-music-server` 目录执行：
 
 ```bash
-docker build -t lx-music-sync-server .
+docker build -t lux-music-server:local .
 ```
 
-或者使用已发布到 Docker Hub 的镜像：<https://hub.docker.com/r/lyswhut/lx-music-sync-server>
+#### 从 Docker Hub 拉取镜像
 
-也可以看此 Issue 提供的解决方案：<https://github.com/lyswhut/lx-music-sync-server/issues/4>
+GitHub Actions 会自动把镜像推送到 Docker Hub：
+
+```bash
+docker pull <你的 Docker Hub 用户名>/lux-music-server:latest
+```
+
+也可以使用版本 tag，例如：
+
+```bash
+docker pull <你的 Docker Hub 用户名>/lux-music-server:0.3.0
+```
+
+若使用 Docker Hub 镜像启动，请把下面示例中的 `lux-music-server:local` 替换为 `<你的 Docker Hub 用户名>/lux-music-server:latest`。
+
+#### 使用 docker run 启动
+
+```bash
+docker run -d \
+  --name lux-music-server \
+  --restart unless-stopped \
+  -p 9527:9527 \
+  -v lux-music-server-data:/server/data \
+  -e PORT=9527 \
+  -e BIND_IP=0.0.0.0 \
+  -e DATA_PATH=/server/data/data \
+  -e LOG_PATH=/server/data/logs \
+  -e LUX_TOKEN_SECRET=请替换为随机长字符串 \
+  lux-music-server:local
+```
+
+说明：
+
+- `/server/data` 是容器内持久化数据卷，包含同步数据、Web 账号数据和日志。
+- 首次启动后访问 `http://<服务器 IP>:9527/admin`，页面会引导创建第一个管理员账号和密码。
+- 不需要在部署 Docker 时传入管理员用户名和密码。
+- 生产环境建议设置固定的 `LUX_TOKEN_SECRET`，否则容器重建后已登录的 Web 会话会失效。
+
+#### 使用 docker compose 启动
+
+```bash
+docker compose up -d --build
+```
+
+默认会：
+
+- 映射宿主机 `9527` 到容器 `9527`。
+- 挂载命名卷 `lux-music-server-data` 到 `/server/data`。
+- 监听 `0.0.0.0`，方便局域网或反向代理访问。
+
+#### 验证部署
+
+启动后可访问：
+
+```text
+http://<服务器 IP>:9527/api/health
+http://<服务器 IP>:9527/hello
+http://<服务器 IP>:9527/id
+http://<服务器 IP>:9527/admin
+```
+
+其中 `/hello`、`/id` 是同步协议兼容端点，`/admin` 是 Web 管理后台。
+
+#### 反向代理与 HTTPS
+
+公网部署时建议使用 Nginx/Caddy 等反向代理提供 HTTPS/WSS，并正确转发 WebSocket upgrade 请求。如果启用了真实 IP 转发，请同步设置 `PROXY_HEADER`，例如：
+
+```bash
+-e PROXY_HEADER=x-real-ip
+```
+
+服务名称 `serverName` 当前请通过 `config.js` 配置；`SERVER_NAME` 环境变量目前不是有效配置项。
+
+#### Docker Hub 自动发布
+
+仓库内的 GitHub Actions 会在以下场景自动构建并推送 Docker Hub 镜像：
+
+- 推送到 `master`：发布 `latest`、`master`、`sha-*` 标签。
+- 推送版本 tag（例如 `v0.3.0`）：发布 `0.3.0`、`0.3`、`sha-*` 标签。
+- 手动触发 `Docker Publish` workflow：按当前引用构建并推送。
+
+该 workflow 使用 GitHub Actions secrets：
+
+- `DOCKERHUB_USERNAME`
+- `DOCKERHUB_TOKEN`
+
+默认构建多架构镜像：`linux/amd64` 与 `linux/arm64`。
+
+也可以看此 Issue 提供的历史 Docker 解决方案：<https://github.com/lyswhut/lx-music-sync-server/issues/4>

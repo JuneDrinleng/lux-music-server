@@ -3,7 +3,7 @@
   "version": "2.1.2",
   "private": true,
   "scripts": {
-    "build": "rimraf server && tsc --project tsconfig.json && tsc-alias -p tsconfig.json",
+    "build": "rimraf server && tsc --project tsconfig.json && tsc-alias -p tsconfig.json && node -e \"const fs=require('fs');fs.cpSync('src/server/web','server/server/web',{recursive:true});\"",
     "start": "node ./index.js",
     "dev": "nodemon",
     "prd": "pm2 start ecosystem.config.js --env production",
@@ -28,6 +28,7 @@
   "homepage": "https://github.com/lyswhut/lx-music-sync-server#readme",
   "dependencies": {
     "bufferutil": "^4.0.8",
+    "fastify": "^4.29.1",
     "log4js": "^6.9.1",
     "lru-cache": "^10.0.1",
     "message2call": "^0.1.3",

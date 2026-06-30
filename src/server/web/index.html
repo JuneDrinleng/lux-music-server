@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lux Music Sync 管理后台</title>
+  <link rel="stylesheet" href="/admin/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">Lux Music Sync Server</p>
+        <h1>同步服务管理后台</h1>
+        <p class="subtitle">管理账号、邀请码、设备与歌单同步概况。</p>
+      </div>
+      <button id="logoutBtn" class="ghost hidden">退出登录</button>
+    </header>
+
+    <section id="bootstrapPanel" class="card stack hidden">
+      <h2>初始化管理员</h2>
+      <p class="muted">当前还没有管理员账号。请先设置管理员用户名和密码，完成后即可登录后台继续配置用户和邀请码。</p>
+      <form id="bootstrapForm" class="stack">
+        <label>用户名<input name="username" autocomplete="username" required></label>
+        <label>显示名<input name="displayName"></label>
+        <label>密码<input name="password" type="password" autocomplete="new-password" required></label>
+        <button type="submit">创建第一个管理员</button>
+      </form>
+    </section>
+
+    <section id="authPanel" class="card grid two">
+      <form id="loginForm" class="stack">
+        <h2>登录</h2>
+        <label>用户名<input name="username" autocomplete="username" required></label>
+        <label>密码<input name="password" type="password" autocomplete="current-password" required></label>
+        <button type="submit">登录</button>
+      </form>
+      <form id="registerForm" class="stack">
+        <h2>邀请码注册</h2>
+        <label>邀请码<input name="inviteCode" required></label>
+        <label>用户名<input name="username" autocomplete="username" required></label>
+        <label>显示名<input name="displayName"></label>
+        <label>密码<input name="password" type="password" autocomplete="new-password" required></label>
+        <button type="submit">注册</button>
+      </form>
+    </section>
+
+    <section id="dashboard" class="hidden stack">
+      <section class="card">
+        <div class="row between">
+          <div>
+            <h2 id="welcomeTitle">欢迎</h2>
+            <p id="userMeta" class="muted"></p>
+          </div>
+          <button id="refreshBtn" class="ghost">刷新</button>
+        </div>
+      </section>
+
+      <section class="grid two">
+        <article class="card stack">
+          <div class="row between">
+            <h2>我的设备</h2>
+            <button id="loadDevicesBtn" class="ghost">刷新设备</button>
+          </div>
+          <div id="devicesList" class="list muted">暂无数据</div>
+        </article>
+        <article class="card stack">
+          <div class="row between">
+            <h2>我的歌单</h2>
+            <button id="loadPlaylistsBtn" class="ghost">刷新歌单</button>
+          </div>
+          <div id="playlistsList" class="list muted">暂无数据</div>
+        </article>
+      </section>
+
+      <section class="grid two">
+        <form id="changePasswordForm" class="card stack">
+          <h2>修改密码</h2>
+          <label>新密码<input name="password" type="password" autocomplete="new-password" required></label>
+          <button type="submit">保存新密码</button>
+        </form>
+        <article class="card stack">
+          <h2>连接码</h2>
+          <p class="muted">连接码只在重置后展示一次，请妥善保存。</p>
+          <button id="resetMySyncCodeBtn">重置我的 LX 连接码</button>
+          <code id="mySyncCode" class="code hidden"></code>
+        </article>
+      </section>
+
+      <section id="adminPanel" class="hidden stack">
+        <section class="card stack">
+          <div class="row between">
+            <h2>服务状态</h2>
+            <button id="loadAdminStatusBtn" class="ghost">刷新状态</button>
+          </div>
+          <div id="adminStatus" class="list muted">暂无数据</div>
+        </section>
+
+        <section class="grid two">
+          <form id="createUserForm" class="card stack">
+            <h2>创建用户</h2>
+            <label>用户名<input name="username" required></label>
+            <label>显示名<input name="displayName"></label>
+            <label>密码<input name="password" type="password" required></label>
+            <label>角色<select name="role"><option value="user">用户</option><option value="admin">管理员</option></select></label>
+            <button type="submit">创建</button>
+          </form>
+          <form id="createInviteForm" class="card stack">
+            <h2>创建邀请码</h2>
+            <label>指定邀请码（可留空）<input name="code"></label>
+            <label>角色<select name="role"><option value="user">用户</option><option value="admin">管理员</option></select></label>
+            <label>最大使用次数<input name="maxUses" type="number" min="1" value="1"></label>
+            <button type="submit">创建邀请码</button>
+            <code id="newInviteCode" class="code hidden"></code>
+          </form>
+        </section>
+
+        <section class="card stack">
+          <div class="row between">
+            <h2>用户管理</h2>
+            <button id="loadUsersBtn" class="ghost">刷新用户</button>
+          </div>
+          <div id="usersList" class="list muted">暂无数据</div>
+        </section>
+
+        <section class="card stack">
+          <div class="row between">
+            <h2>邀请码管理</h2>
+            <button id="loadInvitesBtn" class="ghost">刷新邀请码</button>
+          </div>
+          <div id="invitesList" class="list muted">暂无数据</div>
+        </section>
+      </section>
+    </section>
+
+    <p id="message" class="toast hidden"></p>
+  </main>
+  <script src="/admin/app.js"></script>
+</body>
+</html>

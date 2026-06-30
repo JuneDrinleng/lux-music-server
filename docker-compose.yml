@@ -1,0 +1,25 @@
+services:
+  lux-music-server:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: lux-music-server:local
+    container_name: lux-music-server
+    restart: unless-stopped
+    ports:
+      - "9527:9527"
+    environment:
+      NODE_ENV: production
+      PORT: "9527"
+      BIND_IP: 0.0.0.0
+      DATA_PATH: /server/data/data
+      LOG_PATH: /server/data/logs
+      # 生产环境建议设置固定值，避免容器重建后登录态全部失效。
+      # LUX_TOKEN_SECRET: change-me
+      # 如使用反向代理，请设置真实 IP 请求头，并在代理中传递该 header。
+      # PROXY_HEADER: x-real-ip
+    volumes:
+      - lux-music-server-data:/server/data
+
+volumes:
+  lux-music-server-data:
