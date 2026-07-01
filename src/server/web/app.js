@@ -169,18 +169,20 @@ $('#loginForm').addEventListener('submit', async event => {
 
 $('#registerForm').addEventListener('submit', async event => {
   event.preventDefault()
+  const form = event.currentTarget
   try {
-    await api('/api/auth/register', { method: 'POST', body: JSON.stringify(formData(event.currentTarget)) })
-    event.currentTarget.reset()
+    await api('/api/auth/register', { method: 'POST', body: JSON.stringify(formData(form)) })
+    form.reset()
     message('注册成功，请登录')
   } catch (err) { message(err.message) }
 })
 
 $('#bootstrapForm').addEventListener('submit', async event => {
   event.preventDefault()
+  const form = event.currentTarget
   try {
-    await api('/api/auth/bootstrap', { method: 'POST', body: JSON.stringify(formData(event.currentTarget)) })
-    event.currentTarget.reset()
+    await api('/api/auth/bootstrap', { method: 'POST', body: JSON.stringify(formData(form)) })
+    form.reset()
     bootstrapVisible = false
     renderAuthState()
     message('管理员已创建，请登录')
@@ -203,9 +205,10 @@ $('#loadInvitesBtn').addEventListener('click', () => { void loadInvites().catch(
 
 $('#changePasswordForm').addEventListener('submit', async event => {
   event.preventDefault()
+  const form = event.currentTarget
   try {
-    await api('/api/me/password', { method: 'POST', body: JSON.stringify(formData(event.currentTarget)) })
-    event.currentTarget.reset()
+    await api('/api/me/password', { method: 'POST', body: JSON.stringify(formData(form)) })
+    form.reset()
     message('密码已更新，请重新登录')
   } catch (err) { message(err.message) }
 })
@@ -221,9 +224,10 @@ $('#resetMySyncCodeBtn').addEventListener('click', async() => {
 
 $('#createUserForm').addEventListener('submit', async event => {
   event.preventDefault()
+  const form = event.currentTarget
   try {
-    await api('/api/admin/users', { method: 'POST', body: JSON.stringify(formData(event.currentTarget)) })
-    event.currentTarget.reset()
+    await api('/api/admin/users', { method: 'POST', body: JSON.stringify(formData(form)) })
+    form.reset()
     message('用户已创建')
     await loadUsers()
   } catch (err) { message(err.message) }
@@ -231,13 +235,14 @@ $('#createUserForm').addEventListener('submit', async event => {
 
 $('#createInviteForm').addEventListener('submit', async event => {
   event.preventDefault()
-  const data = formData(event.currentTarget)
+  const form = event.currentTarget
+  const data = formData(form)
   data.maxUses = Number(data.maxUses || 1)
   try {
     const result = await api('/api/admin/invites', { method: 'POST', body: JSON.stringify(data) })
     $('#newInviteCode').textContent = result.code
     show($('#newInviteCode'), true)
-    event.currentTarget.reset()
+    form.reset()
     message('邀请码已创建')
     await loadInvites()
   } catch (err) { message(err.message) }
