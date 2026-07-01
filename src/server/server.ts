@@ -284,9 +284,13 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
   })
 
   host = `http://${ip.includes(':') ? `[${ip}]` : ip}:${port}`
-  void app.ready().then(() => {
+  app.ready(err => {
+    if (err) {
+      reject(err)
+      return
+    }
     httpServer.listen(port, ip)
-  }).catch(reject)
+  })
 })
 
 // const handleStopServer = async() => new Promise<void>((resolve, reject) => {
