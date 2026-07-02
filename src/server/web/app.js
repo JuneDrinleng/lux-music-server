@@ -125,8 +125,10 @@ const loadUsers = async() => {
       <p>登录密码: ${user.hasLoginPassword ? '已设置' : '未设置'} · 连接码: ${user.hasSyncCode ? '已设置' : '未设置'}</p>
       ${user.source === 'managed' ? `<div class="actions">
         <button data-toggle-user="${user.id}" data-status="${user.status === 'active' ? 'disabled' : 'active'}">${user.status === 'active' ? '禁用' : '启用'}</button>
+        <button class="ghost" data-toggle-user-code="${user.id}">显示连接码</button>
         <button data-reset-user-code="${user.id}">重置连接码</button>
-      </div>` : '<p>配置文件/环境变量用户不可在此删除。</p>'}
+      </div>
+      <code class="code hidden" data-user-code="${user.id}"></code>` : '<p>配置文件/环境变量用户不可在此显示或重置连接码。</p>'}
     </div>
   `).join('')
 }
@@ -213,11 +215,30 @@ $('#changePasswordForm').addEventListener('submit', async event => {
   } catch (err) { message(err.message) }
 })
 
+$('#toggleMySyncCodeBtn').addEventListener('click', async() => {
+  const codeEl = $('#mySyncCode')
+  const button = $('#toggleMySyncCodeBtn')
+  try {
+    if (!codeEl.classList.contains('hidden')) {
+      codeEl.textContent = ''
+      show(codeEl, false)
+      button.textContent = '显示我的连接码'
+      return
+    }
+    const data = await api('/api/me/sync-code')
+    codeEl.textContent = data.syncCode
+    show(codeEl, true)
+    button.textContent = '隐藏连接码'
+    message('连接码已显示')
+  } catch (err) { message(err.message) }
+})
+
 $('#resetMySyncCodeBtn').addEventListener('click', async() => {
   try {
     const data = await api('/api/me/sync-code/reset', { method: 'POST' })
     $('#mySyncCode').textContent = data.syncCode
     show($('#mySyncCode'), true)
+    $('#toggleMySyncCodeBtn').textContent = '隐藏连接码'
     message('连接码已重置')
   } catch (err) { message(err.message) }
 })
@@ -259,9 +280,30 @@ document.addEventListener('click', async event => {
     } else if (target.dataset.toggleUser) {
       await api(`/api/admin/users/${target.dataset.toggleUser}`, { method: 'PATCH', body: JSON.stringify({ status: target.dataset.status }) })
       await loadUsers()
+    } else if (target.dataset.toggleUserCode) {
+      const codeEl = document.querySelector(`[data-user-code="${target.dataset.toggleUserCode}"]`)
+      if (!codeEl) return
+      if (!codeEl.classList.contains('hidden')) {
+        codeEl.textContent = ''
+        show(codeEl, false)
+        target.textContent = '显示连接码'
+        return
+      }
+      const data = await api(`/api/admin/users/${target.dataset.toggleUserCode}/sync-code`)
+      codeEl.textContent = data.syncCode
+      show(codeEl, true)
+      target.textContent = '隐藏连接码'
+      message('连接码已显示')
     } else if (target.dataset.resetUserCode) {
       const data = await api(`/api/admin/users/${target.dataset.resetUserCode}/sync-code/reset`, { method: 'POST' })
-      message(`新连接码：${data.syncCode}`)
+      const codeEl = document.querySelector(`[data-user-code="${target.dataset.resetUserCode}"]`)
+      const toggleBtn = document.querySelector(`[data-toggle-user-code="${target.dataset.resetUserCode}"]`)
+      if (codeEl) {
+        codeEl.textContent = data.syncCode
+        show(codeEl, true)
+      }
+      if (toggleBtn) toggleBtn.textContent = '隐藏连接码'
+      message('连接码已重置')
     } else if (target.dataset.toggleInvite) {
       await api(`/api/admin/invites/${target.dataset.toggleInvite}`, { method: 'PATCH', body: JSON.stringify({ disabled: target.dataset.disabled === 'true' }) })
       await loadInvites()

@@ -56,6 +56,13 @@ export const registerMeApi = async(app: FastifyInstance) => {
     return { ok: true }
   })
 
+  app.get('/api/me/sync-code', { preHandler: requireAuth }, async(request: AuthRequest, reply) => {
+    const user = getRequiredAuthUser(request)
+    const syncCode = getAccountStore().getSyncCode(user.id)
+    reply.header('Cache-Control', 'no-store')
+    return { syncCode }
+  })
+
   app.post('/api/me/sync-code/reset', { preHandler: requireAuth }, async(request: AuthRequest) => {
     const user = getRequiredAuthUser(request)
     const syncCode = getAccountStore().resetSyncCode(user.id)

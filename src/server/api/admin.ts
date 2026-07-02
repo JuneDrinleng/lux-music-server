@@ -76,6 +76,18 @@ export const registerAdminApi = async(app: FastifyInstance) => {
     }
   })
 
+  app.get('/api/admin/users/:id/sync-code', { preHandler: requireAdmin }, async(request, reply) => {
+    const id = (request.params as { id?: string }).id
+    if (!id) return reply.code(400).send({ message: 'Missing user id' })
+    try {
+      const syncCode = getAccountStore().getSyncCode(id)
+      reply.header('Cache-Control', 'no-store')
+      return { syncCode }
+    } catch (err: any) {
+      return reply.code(404).send({ message: err.message })
+    }
+  })
+
   app.post('/api/admin/users/:id/sync-code/reset', { preHandler: requireAdmin }, async(request, reply) => {
     const id = (request.params as { id?: string }).id
     if (!id) return reply.code(400).send({ message: 'Missing user id' })

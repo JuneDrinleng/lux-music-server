@@ -238,6 +238,12 @@ export class AccountStore {
     return sanitizeUser(user)
   }
 
+  getSyncCode(userId: string) {
+    const user = this.findManagedUserById(userId)
+    if (!user) throw new Error('User not found')
+    return user.lxSyncCode
+  }
+
   resetSyncCode(userId: string) {
     const user = this.findManagedUserById(userId)
     if (!user) throw new Error('User not found')
