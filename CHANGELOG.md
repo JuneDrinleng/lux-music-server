@@ -6,6 +6,13 @@ Project versioning adheres to [Semantic Versioning](http://semver.org/).
 Commit convention is based on [Conventional Commits](http://conventionalcommits.org).
 Change log format is based on [Keep a Changelog](http://keepachangelog.com/).
 
+## [0.0.1](https://github.com/JuneDrinleng/lux-music-server/releases/tag/v0.0.1) - 2026-07-10
+
+### 首次发布
+
+- Lux Music Server fork 的首个独立版本。
+- 包含 Lux 账号登录、Web 管理后台和移动端账号资料同步能力。
+
 ## [2.1.2](https://github.com/lyswhut/lx-music-sync-server/compare/v2.1.1...v2.1.2) - 2023-10-26
 
 ### 修复

@@ -1,10 +1,7 @@
 name: Docker Publish
 
 on:
-  workflow_dispatch:
   push:
-    branches:
-      - master
     tags:
       - 'v*.*.*'
 
@@ -17,11 +14,17 @@ env:
 
 jobs:
   docker:
+    if: github.event.deleted == false
     name: Build and push Docker image
     runs-on: ubuntu-latest
     steps:
       - name: Check out git repository
         uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -38,6 +41,11 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           MAJOR_MINOR=$(node -p "const v=require('./package.json').version.split('.'); v[0]+'.'+v[1]")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$TAG_VERSION" != "$VERSION" ]; then
+            echo "Release tag v$TAG_VERSION does not match package version $VERSION" >&2
+            exit 1
+          fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "major_minor=$MAJOR_MINOR" >> "$GITHUB_OUTPUT"
 
@@ -47,14 +55,13 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=branch
             type=ref,event=tag
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,prefix=sha-
-            type=raw,value=${{ steps.package.outputs.version }},enable={{is_default_branch}}
-            type=raw,value=${{ steps.package.outputs.major_minor }},enable={{is_default_branch}}
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=${{ steps.package.outputs.version }}
+            type=raw,value=${{ steps.package.outputs.major_minor }}
+            type=raw,value=latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6

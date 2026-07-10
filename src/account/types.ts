@@ -6,6 +6,9 @@ export interface LuxManagedUser {
   id: string
   username: string
   displayName?: string
+  avatar?: string
+  gender?: 'male' | 'female' | 'unknown'
+  signature?: string
   role: LuxUserRole
   source: 'managed'
   status: LuxUserStatus
@@ -24,6 +27,9 @@ export interface LuxUserView {
   id: string
   username: string
   displayName?: string
+  avatar?: string
+  gender?: 'male' | 'female' | 'unknown'
+  signature?: string
   role: LuxUserRole
   source: LuxUserSource
   status: LuxUserStatus
@@ -66,6 +72,9 @@ export interface PublicUserInfo {
   id: string
   username: string
   displayName?: string
+  avatar?: string
+  gender?: 'male' | 'female' | 'unknown'
+  signature?: string
   role: LuxUserRole
   source: LuxUserSource
   status: LuxUserStatus

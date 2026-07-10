@@ -1,6 +1,6 @@
 {
   "name": "lux-music-server",
-  "version": "2.1.2",
+  "version": "0.0.1",
   "private": true,
   "scripts": {
     "build": "rimraf server && tsc --project tsconfig.json && tsc-alias -p tsconfig.json && npm run build:admin && node -e \"const fs=require('fs');fs.rmSync('server/server/web',{recursive:true,force:true});fs.cpSync('admin-ui/dist','server/server/web',{recursive:true});\"",
@@ -12,7 +12,7 @@
     "publish": "node publish"
   },
   "engines": {
-    "node": ">= 20",
+    "node": ">= 24",
     "npm": ">= 10"
   },
   "repository": {

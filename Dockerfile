@@ -1,4 +1,4 @@
-FROM node:20-alpine AS builder
+FROM node:24-alpine AS builder
 
 WORKDIR /source-code
 COPY package.json package-lock.json ./
@@ -9,7 +9,7 @@ RUN npm run build \
   && rm -rf node_modules \
   && npm ci --omit=dev
 
-FROM node:20-alpine AS final
+FROM node:24-alpine AS final
 
 WORKDIR /server
 

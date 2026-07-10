@@ -1,8 +1,35 @@
-import type { FastifyInstance } from 'fastify'
+import type { FastifyInstance, FastifyReply } from 'fastify'
 import { getAccountStore } from '@/account/store'
 import { getUserSpace } from '@/user'
 import { getRequiredAuthUser, requireAuth, type AuthRequest } from './authGuard'
 import { getString, isRecord } from './utils'
+
+const getOptionalProfileString = (value: unknown, maxLength: number) => {
+  if (typeof value !== 'string') return undefined
+  const text = value.trim().substring(0, maxLength)
+  return text || ''
+}
+const getGender = (value: unknown): 'male' | 'female' | 'unknown' | undefined => {
+  if (typeof value != 'string') return undefined
+  return value == 'male' || value == 'female' || value == 'unknown' ? value : undefined
+}
+const toProfile = (user: ReturnType<ReturnType<typeof getAccountStore>['findManagedUserById']>) => ({
+  displayName: user?.displayName ?? '',
+  avatar: user?.avatar ?? '',
+  gender: user?.gender ?? 'unknown',
+  signature: user?.signature ?? '',
+})
+const updateProfile = async(request: AuthRequest, reply: FastifyReply) => {
+  if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+  const user = getRequiredAuthUser(request)
+  const updatedUser = getAccountStore().updateUser(user.id, {
+    displayName: getOptionalProfileString(request.body.displayName, 100),
+    avatar: getOptionalProfileString(request.body.avatar, 2 * 1024 * 1024),
+    gender: getGender(request.body.gender),
+    signature: getOptionalProfileString(request.body.signature, 140),
+  })
+  return { profile: toProfile(getAccountStore().findManagedUserById(updatedUser.id)) }
+}
 
 const buildPlaylistSummary = async(username: string) => {
   const listData = await getUserSpace(username).listManage.getListData()
@@ -29,6 +56,14 @@ const buildPlaylistSummary = async(username: string) => {
 }
 
 export const registerMeApi = async(app: FastifyInstance) => {
+  app.get('/api/me/profile', { preHandler: requireAuth }, async(request: AuthRequest) => {
+    const user = getRequiredAuthUser(request)
+    return { profile: toProfile(user) }
+  })
+
+  app.post('/api/me/profile', { preHandler: requireAuth }, updateProfile)
+  app.patch('/api/me/profile', { preHandler: requireAuth }, updateProfile)
+
   app.get('/api/me/devices', { preHandler: requireAuth }, async(request: AuthRequest) => {
     const user = getRequiredAuthUser(request)
     return { devices: await getUserSpace(user.username).getDecices() }

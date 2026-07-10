@@ -17,6 +17,10 @@ const getAddMusicLocationType = (value: unknown): LX.AddMusicLocationType | unde
   if (typeof value != 'string') return undefined
   return value == 'top' || value == 'bottom' ? value : undefined
 }
+const getGender = (value: unknown): 'male' | 'female' | 'unknown' | undefined => {
+  if (typeof value != 'string') return undefined
+  return value == 'male' || value == 'female' || value == 'unknown' ? value : undefined
+}
 
 export const registerAdminApi = async(app: FastifyInstance) => {
   app.get('/api/admin/status', { preHandler: requireAdmin }, async() => ({
@@ -52,6 +56,9 @@ export const registerAdminApi = async(app: FastifyInstance) => {
     try {
       const user = getAccountStore().updateUser(id, {
         displayName: getOptionalString(request.body.displayName),
+        avatar: getOptionalString(request.body.avatar),
+        gender: getGender(request.body.gender),
+        signature: getOptionalString(request.body.signature),
         role: getRole(request.body.role),
         status: getStatusValue(request.body.status),
         maxSnapshotNum: getNumber(request.body.maxSnapshotNum),

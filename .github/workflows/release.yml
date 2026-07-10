@@ -7,19 +7,20 @@ on:
 
 jobs:
   Linux:
+    if: github.event.deleted == false
     name: Build
     runs-on: ubuntu-latest
     steps:
       - name: Check out git repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install Node.js
-        uses: actions/setup-node@v3
+        uses: actions/setup-node@v4
         with:
-          node-version: '16'
+          node-version: '24'
 
       - name: Cache file
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             node_modules
@@ -40,14 +41,12 @@ jobs:
           node -p -e '`PACKAGE_NAME=${require("./package.json").name}`' >> $GITHUB_ENV
           node -p -e '`PACKAGE_VERSION=${require("./package.json").version}`' >> $GITHUB_ENV
 
-      - name: Create git tag
-        uses: pkgdeps/git-tag-action@v2
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          github_repo: ${{ github.repository }}
-          version: ${{ env.PACKAGE_VERSION }}
-          git_commit_sha: ${{ github.sha }}
-          git_tag_prefix: "v"
+      - name: Validate release tag
+        run: |
+          if [ "${GITHUB_REF_NAME#v}" != "$PACKAGE_VERSION" ]; then
+            echo "Release tag $GITHUB_REF_NAME does not match package version $PACKAGE_VERSION" >&2
+            exit 1
+          fi
 
       - name: Zip files
         run: zip -r lux-music-server_v${{ env.PACKAGE_VERSION }}.zip server ecosystem.config.js config.js index.js package-lock.json package.json LICENSE Readme.md

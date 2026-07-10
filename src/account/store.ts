@@ -23,6 +23,9 @@ const sanitizeUser = (user: LuxManagedUser): PublicUserInfo => ({
   id: user.id,
   username: user.username,
   displayName: user.displayName,
+  avatar: user.avatar,
+  gender: user.gender,
+  signature: user.signature,
   role: user.role,
   source: user.source,
   status: user.status,
@@ -158,6 +161,9 @@ export class AccountStore {
         id: user.id,
         username: user.username,
         displayName: user.displayName,
+        avatar: user.avatar,
+        gender: user.gender,
+        signature: user.signature,
         role: user.role,
         source: user.source,
         status: user.status,
@@ -254,10 +260,13 @@ export class AccountStore {
     return user.lxSyncCode
   }
 
-  updateUser(userId: string, data: Partial<Pick<LuxManagedUser, 'displayName' | 'role' | 'status' | 'maxSnapshotNum' | 'list.addMusicLocationType'>>) {
+  updateUser(userId: string, data: Partial<Pick<LuxManagedUser, 'displayName' | 'avatar' | 'gender' | 'signature' | 'role' | 'status' | 'maxSnapshotNum' | 'list.addMusicLocationType'>>) {
     const user = this.findManagedUserById(userId)
     if (!user) throw new Error('User not found')
     if (data.displayName !== undefined) user.displayName = data.displayName
+    if (data.avatar !== undefined) user.avatar = data.avatar
+    if (data.gender !== undefined) user.gender = data.gender
+    if (data.signature !== undefined) user.signature = data.signature
     if (data.role) user.role = data.role
     if (data.status) user.status = data.status
     if (data.maxSnapshotNum !== undefined) user.maxSnapshotNum = data.maxSnapshotNum
