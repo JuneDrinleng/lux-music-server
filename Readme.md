@@ -305,9 +305,9 @@ http://<服务器 IP>:9527/admin
 
 #### Docker Hub 自动发布
 
-仓库内的 GitHub Actions 仅在推送版本 tag（例如 `v2.1.2`）时构建并推送 Docker Hub 镜像。tag 中的版本必须与 `package.json` 一致，否则发布会失败。
+仓库内的 GitHub Actions 仅在推送版本 tag（例如 `v0.0.1`）时运行同一个发布流程：先创建 GitHub Release，再构建并推送 Docker Hub 镜像。tag 中的版本必须与 `package.json` 一致，否则发布会失败。
 
-- 发布 `latest`、`v2.1.2`、`2.1.2`、`2.1` 和 `sha-*` 标签。`sha-*` 是提交级追踪标签，便于回滚到指定 commit。
+- Docker Hub 仅发布 Git tag 本身（例如 `v0.0.1`）和 `latest`。
 
 该 workflow 使用 GitHub Actions secrets：
 
