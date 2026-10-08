@@ -1,110 +1,251 @@
 name: Release
 
+# dev：预发布 vX.Y.Z-dev.N，镜像 :dev 与 :X.Y.Z-dev.N
+# master：正式版（版本 = package.json），镜像 :latest、:X.Y.Z、:X.Y
+# 已有 git tag 就跳过。已有的版本镜像不覆盖。只推 GHCR，只用 GITHUB_TOKEN。
 on:
   push:
-    tags:
-      - "v*.*.*"
+    branches: [dev, master]
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.github/ISSUE_TEMPLATE/**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: '补发：为「有 tag 无 Release」的版本建 Release（如 v0.1.0-dev.3）；留空 = 按当前分支正常发布'
+        required: false
+        type: string
 
 permissions:
   contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/junedrinleng/lux-music-server
 
 jobs:
-  release:
-    if: github.event.deleted == false
-    name: Build and publish release
+  plan:
     runs-on: ubuntu-latest
+    outputs:
+      skip: ${{ steps.p.outputs.skip }}
+      version: ${{ steps.p.outputs.version }}
+      tag: ${{ steps.p.outputs.tag }}
+      prerelease: ${{ steps.p.outputs.prerelease }}
+      prev_tag: ${{ steps.p.outputs.prev_tag }}
+      republish: ${{ steps.p.outputs.republish }}
     steps:
-      - name: Check out git repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-      - name: Install Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      - name: Cache file
-        uses: actions/cache@v4
-        with:
-          path: |
-            node_modules
-            $HOME/.npm/_prebuilds
-          key: ${{ runner.os }}-build-caches-${{ hashFiles('**/package-lock.json') }}
-          restore-keys: |
-            ${{ runner.os }}-build-
-
-      - name: Install Dependencies
+      - id: p
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_IN: ${{ inputs.tag }}
         run: |
-          npm install
+          set -euo pipefail
+          if [ -n "${TAG_IN:-}" ]; then
+            if [[ ! "$TAG_IN" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-dev\.[0-9]+)?$ ]]; then
+              echo "tag 格式必须是 vX.Y.Z 或 vX.Y.Z-dev.N：$TAG_IN" >&2
+              exit 1
+            fi
+            git rev-parse -q --verify "refs/tags/$TAG_IN" >/dev/null || { echo "tag 不存在：$TAG_IN" >&2; exit 1; }
+            if gh release view "$TAG_IN" >/dev/null 2>&1; then
+              echo "$TAG_IN 已有 Release，禁止覆盖" >&2
+              exit 1
+            fi
+            v="${TAG_IN#v}"
+            pre=false
+            [[ "$v" == *-dev.* ]] && pre=true
+            {
+              echo "skip=false"
+              echo "version=$v"
+              echo "tag=$TAG_IN"
+              echo "prerelease=$pre"
+              echo "prev_tag="
+              echo "republish=true"
+            } | tee -a "$GITHUB_OUTPUT"
+          else
+            node scripts/next-version.mjs "$GITHUB_REF_NAME"
+            echo "republish=false" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Build src code
-        run: npm run build
-
-      - name: Get package info
+      - name: 稳定版发布前检查 CHANGELOG
+        if: steps.p.outputs.skip == 'false' && steps.p.outputs.prerelease != 'true'
+        env:
+          TAG_IN: ${{ inputs.tag }}
         run: |
-          node -p -e '`PACKAGE_NAME=${require("./package.json").name}`' >> $GITHUB_ENV
-          node -p -e '`PACKAGE_VERSION=${require("./package.json").version}`' >> $GITHUB_ENV
-
-      - name: Validate release tag
-        run: |
-          if [ "${GITHUB_REF_NAME#v}" != "$PACKAGE_VERSION" ]; then
-            echo "Release tag $GITHUB_REF_NAME does not match package version $PACKAGE_VERSION" >&2
+          set -euo pipefail
+          version="${{ steps.p.outputs.version }}"
+          if [ -n "${TAG_IN:-}" ]; then
+            git show "$TAG_IN:CHANGELOG.md" > /tmp/changelog.md
+          else
+            cp CHANGELOG.md /tmp/changelog.md
+          fi
+          awk -v h="## [$version]" 'index($0,"## ")==1 { p = (index($0, h)==1) } p' /tmp/changelog.md > /tmp/notes.md
+          if [ ! -s /tmp/notes.md ]; then
+            echo "CHANGELOG.md 缺少 ## [$version] 段落，拒绝占号" >&2
             exit 1
           fi
 
-      - name: Zip files
-        run: zip -r lux-music-server_v${{ env.PACKAGE_VERSION }}.zip server ecosystem.config.js config.js index.js package-lock.json package.json LICENSE Readme.md
-
-      - name: Release
-        uses: softprops/action-gh-release@v1
-        with:
-          body_path: ./publish/changeLog.md
-          prerelease: false
-          draft: false
-          tag_name: v${{ env.PACKAGE_VERSION }}
-          files: |
-            lux-music-server_v${{ env.PACKAGE_VERSION }}.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Generate file MD5
+      - name: 占号（先推 tag，已有 tag 则失败且不覆盖）
+        if: steps.p.outputs.skip == 'false' && steps.p.outputs.republish != 'true'
         run: |
-          md5sum *.zip
+          set -euo pipefail
+          tag="${{ steps.p.outputs.tag }}"
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "tag $tag 已存在，拒绝覆盖" >&2
+            exit 1
+          fi
+          git tag "$tag" "$GITHUB_SHA"
+          git push origin "refs/tags/$tag"
 
-  docker:
-    needs: release
-    name: Build and push Docker image
+  publish:
+    needs: plan
+    if: needs.plan.outputs.skip == 'false'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      TAG: ${{ needs.plan.outputs.tag }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      PRE: ${{ needs.plan.outputs.prerelease }}
+      PREV: ${{ needs.plan.outputs.prev_tag }}
     steps:
-      - name: Check out git repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          fetch-tags: true
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: 检出已占号的 tag
+        run: |
+          set -euo pipefail
+          ok=0
+          for _ in 1 2 3 4 5 6; do
+            if git fetch origin "refs/tags/${TAG}:refs/tags/${TAG}" && git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+              ok=1
+              break
+            fi
+            sleep 3
+          done
+          [ "$ok" = 1 ]
+          git checkout --detach "$TAG"
 
-      - name: Log in to Docker Hub
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: 安装依赖并注入版本
+        run: |
+          set -euo pipefail
+          npm ci
+          npm pkg set version="$VERSION"
+          npm run build
+          npm test
+
+      - name: 打包 zip
+        run: |
+          set -euo pipefail
+          test -d server
+          zip -r "lux-music-server_${TAG}.zip" server ecosystem.config.js config.js index.js package-lock.json package.json LICENSE Readme.md
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR
         uses: docker/login-action@v3
         with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Extract Docker metadata
-        id: meta
-        uses: docker/metadata-action@v5
-        with:
-          images: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/lux-music-server
-          tags: |
-            type=raw,value=${{ github.ref_name }}
-            type=raw,value=latest
+      - name: 检查不可变镜像 tag 是否已存在
+        id: image
+        run: |
+          set -euo pipefail
+          if docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "镜像 $IMAGE:$VERSION 已存在"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "镜像 $IMAGE:$VERSION 还不存在"
+          fi
 
-      - name: Build and push Docker image
+      - name: 拒绝覆盖已发布的版本镜像
+        if: steps.image.outputs.exists == 'true' && needs.plan.outputs.republish != 'true'
+        run: |
+          echo "GHCR 已有 $IMAGE:$VERSION，拒绝覆盖。若 Release 还没建，请用 workflow_dispatch 补发这个 tag（补发不会重推已有版本镜像）。" >&2
+          exit 1
+
+      - name: 计算要推送的 tag
+        id: tags
+        if: steps.image.outputs.exists != 'true'
+        run: |
+          set -euo pipefail
+          {
+            echo "tags<<EOF"
+            node scripts/image-tags.mjs "$IMAGE" "$VERSION" "$PRE"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+          echo "将推送："
+          node scripts/image-tags.mjs "$IMAGE" "$VERSION" "$PRE"
+
+      - name: 构建并推送镜像
+        if: steps.image.outputs.exists != 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          provenance: false
+          sbom: false
+          tags: ${{ steps.tags.outputs.tags }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ env.VERSION }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.licenses=Apache-2.0
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: 创建 Release（已有 Release 会失败，不覆盖）
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "$TAG 已有 Release，禁止覆盖" >&2
+            exit 1
+          fi
+          asset="lux-music-server_${TAG}.zip"
+          if [ "$PRE" = true ]; then
+            args=(--verify-tag --title "$TAG（开发版）" --prerelease --latest=false --generate-notes)
+            if [ -n "$PREV" ] && [ "$PREV" != "$TAG" ]; then
+              args+=(--notes-start-tag "$PREV")
+            fi
+            gh release create "$TAG" "$asset" "${args[@]}"
+          else
+            awk -v h="## [$VERSION]" 'index($0,"## ")==1 { p = (index($0, h)==1) } p' CHANGELOG.md > notes.md
+            if [ ! -s notes.md ]; then
+              echo "CHANGELOG.md 缺少 ## [$VERSION] 段落" >&2
+              exit 1
+            fi
+            gh release create "$TAG" "$asset" --verify-tag --title "$TAG" --notes-file notes.md --latest
+          fi
+
+  notice:
+    needs: plan
+    if: needs.plan.outputs.skip == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "跳过发布：tag 已存在，或 dev 与最新稳定版代码相同 / HEAD 已有 dev tag。不会覆盖已有 Release 或镜像。"

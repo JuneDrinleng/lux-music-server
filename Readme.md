@@ -177,7 +177,7 @@ server {
 2. 执行 `npm ci` 与 `npm run build`；
 3. 重启你的服务。
 
-使用 `docker:` 将代码更新到最新后，再打包镜像即可。
+使用 Docker 时，可以把代码更新到最新后重新构建镜像，也可以直接拉取 GHCR 上的稳定版或开发版镜像，见下方 Docker 一节。
 
 ## 从快照文件恢复数据
 
@@ -229,21 +229,30 @@ server {
 docker build -t lux-music-server:local .
 ```
 
-#### 从 Docker Hub 拉取镜像
+#### 从 GHCR 拉取镜像
 
-GitHub Actions 会自动把镜像推送到 Docker Hub：
+镜像只发布到 GitHub Container Registry（`ghcr.io`），不再推送 Docker Hub。Actions 使用仓库自带的 `GITHUB_TOKEN` 推送，不需要额外的 registry secret。
 
-```bash
-docker pull <你的 Docker Hub 用户名>/lux-music-server:latest
-```
-
-也可以使用版本 tag，例如：
+稳定版（合并进 `master` 并完成发布之后）：
 
 ```bash
-docker pull <你的 Docker Hub 用户名>/lux-music-server:0.3.0
+docker pull ghcr.io/junedrinleng/lux-music-server:latest
+docker pull ghcr.io/junedrinleng/lux-music-server:0.1.0
+docker pull ghcr.io/junedrinleng/lux-music-server:0.1
 ```
 
-若使用 Docker Hub 镜像启动，请把下面示例中的 `lux-music-server:local` 替换为 `<你的 Docker Hub 用户名>/lux-music-server:latest`。
+开发版（合并进 `dev` 并完成发布之后）：
+
+```bash
+docker pull ghcr.io/junedrinleng/lux-music-server:dev
+docker pull ghcr.io/junedrinleng/lux-music-server:0.1.0-dev.1
+```
+
+- `:latest` 和 `:X.Y` 只跟随稳定版。同一个 minor 打出 hotfix 后，`:X.Y` 会改指向新的 patch；`:X.Y.Z` 不变。
+- `:dev` 跟随最新开发版。`:X.Y.Z` 和 `:X.Y.Z-dev.N` 发布后不再覆盖。
+- 首次推送后，包的默认可见性可能是 Private。需要别人能拉取时，到该 Package 的设置里改成 Public。
+
+若使用 GHCR 镜像启动，请把下面示例中的 `lux-music-server:local` 替换为 `ghcr.io/junedrinleng/lux-music-server:latest`（试开发版则用 `:dev`）。
 
 #### 使用 docker run 启动
 
@@ -303,16 +312,15 @@ http://<服务器 IP>:9527/admin
 
 服务名称 `serverName` 当前请通过 `config.js` 配置；`SERVER_NAME` 环境变量目前不是有效配置项。
 
-#### Docker Hub 自动发布
+#### 自动发布
 
-仓库内的 GitHub Actions 仅在推送版本 tag（例如 `v0.0.1`）时运行同一个发布流程：先创建 GitHub Release，再构建并推送 Docker Hub 镜像。tag 中的版本必须与 `package.json` 一致，否则发布会失败。
+合并进 `dev` 或 `master` 时由 GitHub Actions 发布（不再由「推送 `v*.*.*` tag」触发）：
 
-- Docker Hub 仅发布 Git tag 本身（例如 `v0.0.1`）和 `latest`。
-
-该 workflow 使用 GitHub Actions secrets：
-
-- `DOCKERHUB_USERNAME`
-- `DOCKERHUB_TOKEN`
+- `dev`：预发布 `vX.Y.Z-dev.N`（N 自动递增），镜像 `:dev` 和 `:X.Y.Z-dev.N`。
+- `master`：正式 Release。版本号就是当时的 `package.json`（`X.Y.Z`）。镜像 `:latest`、`:X.Y.Z`、`:X.Y`。hotfix 只把 patch 加一。
+- `package.json` 里始终是最近一次稳定版。开发版号只在构建时注入，不会写回仓库。
+- 对应的 git tag 已经存在就跳过，不会覆盖已有 Release，也不会覆盖已经推送的版本镜像。
+- 只改文档（`**.md`、`docs/**`）不会触发发布。
 
 默认构建 `linux/amd64` 镜像。若后续需要 ARM 服务器镜像，可在 workflow 中重新启用 `linux/arm64` 平台。
 
