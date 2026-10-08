@@ -1,6 +1,6 @@
-// import { SYNC_CLOSE_CODE } from '@/constants'
-import { SYNC_CLOSE_CODE, TRANS_MODE } from '@/constants'
+import { TRANS_MODE } from '@/constants'
 import { getUserSpace } from '@/user'
+import { handleSyncBroadcastFailure } from '@/modules/syncFailure'
 import { filterRules } from '../utils'
 // import { LIST_IDS } from '@common/constants'
 
@@ -48,10 +48,7 @@ const overwriteRemoteListData = async(socket: LX.Socket, listData: LX.Dislike.Di
     tasks.push(client.remoteQueueDislike.onDislikeSyncAction(action).then(async() => {
       return userSpace.dislikeManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
     }).catch(err => {
-      // TODO send status
-      client.close(SYNC_CLOSE_CODE.failed)
-      // client.moduleReadys.list = false
-      console.log(err.message)
+      handleSyncBroadcastFailure(client, 'dislike', err)
     }))
   })
   if (!tasks.length) return

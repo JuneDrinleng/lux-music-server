@@ -16,7 +16,10 @@ services:
       DATA_PATH: /server/data/data
       LOG_PATH: /server/data/logs
       # 生产环境建议设置固定值，避免容器重建后登录态全部失效。
-      # LUX_TOKEN_SECRET: change-me
+      # LUX_TOKEN_SECRET: change-me   # 生产必须设置
+      # LUX_BOOTSTRAP_TOKEN: change-me  # 远程首次建管理员时需要
+      # LUX_ADMIN_USER: admin
+      # LUX_ADMIN_PASSWORD: change-me
       # 如使用反向代理，请设置真实 IP 请求头，并在代理中传递该 header。
       # PROXY_HEADER: x-real-ip
     volumes:

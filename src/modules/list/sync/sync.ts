@@ -1,6 +1,6 @@
-// import { SYNC_CLOSE_CODE } from '@/constants'
-import { SYNC_CLOSE_CODE, TRANS_MODE } from '@/constants'
+import { TRANS_MODE } from '@/constants'
 import { getUserSpace, getUserConfig } from '@/user'
+import { handleSyncBroadcastFailure } from '@/modules/syncFailure'
 import { buildUserListInfoFull } from '../utils'
 // import { LIST_IDS } from '@common/constants'
 
@@ -55,10 +55,7 @@ const overwriteRemoteListData = async(socket: LX.Socket, listData: LX.Sync.List.
     tasks.push(client.remoteQueueList.onListSyncAction(action).then(async() => {
       return userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
     }).catch(err => {
-      // TODO send status
-      client.close(SYNC_CLOSE_CODE.failed)
-      // client.moduleReadys.list = false
-      console.log(err.message)
+      handleSyncBroadcastFailure(client, 'list', err)
     }))
   })
   if (!tasks.length) return

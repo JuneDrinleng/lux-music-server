@@ -61,9 +61,13 @@ const sendText = (reply: FastifyReply, code: number, text: string) => {
   void reply.code(code).type('text/plain; charset=utf-8').send(text)
 }
 
+/** Match profile avatar cap (200KB) plus room for other JSON fields. */
+export const API_BODY_LIMIT = 256 * 1024
+
 export const createApp = (): FastifyInstance => {
   const app = fastify({
     logger: false,
+    bodyLimit: API_BODY_LIMIT,
   })
 
   app.get('/hello', async(_request, reply) => {

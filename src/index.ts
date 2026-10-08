@@ -186,8 +186,37 @@ const accountStore = initAccountStore(global.lx.dataPath)
 global.lx.config.users = accountStore.getSyncUsers()
 checkUserConfig(global.lx.config.users)
 
+{
+  const isProduction = process.env.NODE_ENV == 'production'
+  const runningInDocker = !!process.env.LUX_IN_DOCKER || fs.existsSync('/.dockerenv')
+  if ((isProduction || runningInDocker) && !process.env.LUX_TOKEN_SECRET) {
+    console.warn([
+      '[lux-music-server] WARNING: LUX_TOKEN_SECRET is not set.',
+      'A random secret was persisted under data/lux/accounts.json.',
+      'Container rebuilds or deleting that file will invalidate all Web login tokens.',
+      'Set LUX_TOKEN_SECRET to a fixed random string in production.',
+    ].join(' '))
+  }
+}
+
+const shouldLogSyncCodesPlaintext = () => {
+  const flag = process.env.LUX_LOG_SYNC_CODES
+  if (flag == '1' || flag?.toLowerCase() == 'true') return true
+  const debug = process.env.DEBUG
+  return !!debug && debug != '0' && debug.toLowerCase() != 'false'
+}
+
+const maskSyncCode = (code: string) => {
+  if (!code) return '(empty)'
+  if (code.length <= 4) return '****'
+  return `${code.slice(0, 2)}****${code.slice(-2)}`
+}
+
 console.log(`Users:
-${global.lx.config.users.map(user => `  ${user.name}: ${user.password}`).join('\n') || '  No User'}
+${global.lx.config.users.map(user => {
+  const password = shouldLogSyncCodesPlaintext() ? user.password : maskSyncCode(user.password)
+  return `  ${user.name}: ${password}`
+}).join('\n') || '  No User'}
 `)
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { getUserDirname } = require('@/user')

@@ -244,6 +244,16 @@ export class AccountStore {
     return sanitizeUser(user)
   }
 
+  /** Bump sessionVersion so all existing JWTs for this user fail authGuard checks. */
+  invalidateSessions(userId: string) {
+    const user = this.findManagedUserById(userId)
+    if (!user) throw new Error('User not found')
+    user.sessionVersion += 1
+    user.updatedAt = now()
+    this.saveSync()
+    return sanitizeUser(user)
+  }
+
   getSyncCode(userId: string) {
     const user = this.findManagedUserById(userId)
     if (!user) throw new Error('User not found')

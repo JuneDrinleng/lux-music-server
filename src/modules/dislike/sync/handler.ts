@@ -2,8 +2,8 @@
 // import { throttle } from '@common/utils/common'
 // import { sendSyncActionList } from '@main/modules/winMain'
 // import { SYNC_CLOSE_CODE } from '@/constants'
-import { SYNC_CLOSE_CODE } from '@/constants'
 import { getUserSpace } from '@/user'
+import { handleSyncBroadcastFailure } from '@/modules/syncFailure'
 // import { encryptMsg } from '@/utils/tools'
 
 // let wss: LX.SocketServer | null
@@ -44,10 +44,7 @@ const handler: LX.Sync.ServerSyncHandlerDislikeActions<LX.Socket> = {
       void client.remoteQueueDislike.onDislikeSyncAction(action).then(async() => {
         return userSpace.dislikeManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
       }).catch(err => {
-      // TODO send status
-        client.close(SYNC_CLOSE_CODE.failed)
-        // client.moduleReadys.dislike = false
-        console.log(err.message)
+        handleSyncBroadcastFailure(client, 'dislike', err)
       })
     })
   },

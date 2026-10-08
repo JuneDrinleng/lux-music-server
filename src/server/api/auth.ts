@@ -1,14 +1,10 @@
 import type { FastifyInstance } from 'fastify'
 import { getAccountStore } from '@/account/store'
 import { createToken } from '@/account/token'
+import { canBootstrap } from './bootstrapGuard'
+import { clearAuthFailures, getRequestIP, isAuthRateLimited, recordAuthFailure } from './rateLimit'
 import { getOptionalString, getString, isRecord } from './utils'
 import { requireAuth, type AuthRequest } from './authGuard'
-
-const canBootstrap = (hasAdmin: boolean, request: { headers: Record<string, any> }) => {
-  if (!hasAdmin) return true
-  const token = process.env.LUX_BOOTSTRAP_TOKEN
-  return !!token && request.headers['x-lux-bootstrap-token'] == token
-}
 
 const toPublicUser = (user: ReturnType<ReturnType<typeof getAccountStore>['findManagedUserById']>) => {
   if (!user) return null
@@ -34,10 +30,17 @@ export const registerAuthApi = async(app: FastifyInstance) => {
     const displayName = getOptionalString(request.body.displayName)
     if (!inviteCode || !username || !password) return reply.code(400).send({ message: 'Missing required fields' })
 
+    const ip = getRequestIP(request)
+    if (isAuthRateLimited(ip, username)) {
+      return reply.code(403).send({ message: 'Too many failed attempts, try again later' })
+    }
+
     try {
       const user = await getAccountStore().registerByInvite({ code: inviteCode, username, password, displayName })
+      clearAuthFailures(ip, username)
       return { user }
     } catch (err: any) {
+      recordAuthFailure(ip, username)
       return reply.code(400).send({ message: err.message })
     }
   })
@@ -48,10 +51,19 @@ export const registerAuthApi = async(app: FastifyInstance) => {
     const password = getString(request.body.password)
     if (!username || !password) return reply.code(400).send({ message: 'Missing required fields' })
 
+    const ip = getRequestIP(request)
+    if (isAuthRateLimited(ip, username)) {
+      return reply.code(403).send({ message: 'Too many failed attempts, try again later' })
+    }
+
     const store = getAccountStore()
     const user = await store.verifyLogin(username, password)
-    if (!user) return reply.code(401).send({ message: 'Invalid username or password' })
+    if (!user) {
+      recordAuthFailure(ip, username)
+      return reply.code(401).send({ message: 'Invalid username or password' })
+    }
 
+    clearAuthFailures(ip, username)
     const token = createToken({
       userId: user.id,
       username: user.username,
@@ -66,20 +78,32 @@ export const registerAuthApi = async(app: FastifyInstance) => {
     user: toPublicUser(request.authUser ?? null),
   }))
 
-  app.post('/api/auth/logout', async() => ({ ok: true }))
+  app.post('/api/auth/logout', { preHandler: requireAuth }, async(request: AuthRequest) => {
+    const user = request.authUser
+    if (!user) return { ok: true }
+    getAccountStore().invalidateSessions(user.id)
+    return { ok: true }
+  })
 
   app.get('/api/auth/bootstrap', async(request) => {
     const needsAdmin = !getAccountStore().hasManagedAdmin()
+    const hasAdmin = !needsAdmin
     return {
       needsAdmin,
-      allowed: canBootstrap(!needsAdmin, request.raw),
+      allowed: canBootstrap(hasAdmin, request),
     }
   })
 
   app.post('/api/auth/bootstrap', async(request, reply) => {
     const store = getAccountStore()
     const hasAdmin = store.hasManagedAdmin()
-    if (hasAdmin && !canBootstrap(hasAdmin, request.raw)) return reply.code(403).send({ message: 'Bootstrap token invalid' })
+    if (!canBootstrap(hasAdmin, request)) {
+      return reply.code(403).send({
+        message: hasAdmin
+          ? 'Bootstrap token invalid'
+          : 'Bootstrap only allowed from localhost or with a valid LUX_BOOTSTRAP_TOKEN',
+      })
+    }
     if (hasAdmin) return reply.code(409).send({ message: 'Admin already exists' })
     if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
     const username = getString(request.body.username)

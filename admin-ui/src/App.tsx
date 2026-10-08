@@ -659,15 +659,23 @@ function App() {
   useEffect(() => { void loadMe() }, [])
 
   const logout = () => {
-    setToken('')
-    setMe(null)
-    setDevices([])
-    setPlaylists(null)
-    setAdminStatus(null)
-    setUsers([])
-    setInvites([])
-    setActiveSection('overview')
-    void loadBootstrap()
+    void (async() => {
+      try {
+        if (getToken()) await authApi.logout()
+      } catch {
+        // Token may already be invalid; still clear local state.
+      } finally {
+        setToken('')
+        setMe(null)
+        setDevices([])
+        setPlaylists(null)
+        setAdminStatus(null)
+        setUsers([])
+        setInvites([])
+        setActiveSection('overview')
+        await loadBootstrap()
+      }
+    })()
   }
 
   const body = () => {
