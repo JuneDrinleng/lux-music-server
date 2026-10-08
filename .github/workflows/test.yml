@@ -1,0 +1,80 @@
+name: CI
+
+# PR 与 push 到 dev、master 都跑：服务端构建、管理台构建、测试，以及镜像冒烟。
+# 覆盖原 PR #1 的 test.yml（那边 rebase 时丢掉自己的这份文件即可）。
+on:
+  push:
+    branches: [dev, master]
+  pull_request:
+    branches: [dev, master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Build, admin UI, and test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v4
+
+      - name: Install Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build server and admin UI
+        run: npm run build
+
+      - name: Test
+        run: npm test
+
+  docker-smoke:
+    name: Docker image serves /hello
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v4
+
+      - name: Build image
+        run: docker build -t lux:ci .
+
+      - name: Run and require /hello
+        run: |
+          set -euo pipefail
+          docker run -d --name lux-ci -p 9527:9527 -e LUX_TOKEN_SECRET=ci-only lux:ci
+          cleanup() {
+            status=$?
+            if [ "$status" -ne 0 ]; then
+              docker logs lux-ci || true
+            fi
+            docker rm -f lux-ci >/dev/null 2>&1 || true
+            exit "$status"
+          }
+          trap cleanup EXIT
+          ok=0
+          for _ in $(seq 1 30); do
+            body=$(curl -fsS http://127.0.0.1:9527/hello 2>/dev/null || true)
+            body=${body//$'\r'/}
+            body=${body%$'\n'}
+            if [ "$body" = 'Hello~::^-^::~v4~' ]; then
+              ok=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$ok" != 1 ]; then
+            echo "30 秒内 /hello 没有返回 Hello~::^-^::~v4~" >&2
+            exit 1
+          fi

@@ -9,7 +9,7 @@
     "start": "node ./index.js",
     "dev": "nodemon",
     "prd": "pm2 start ecosystem.config.js --env production",
-    "publish": "node publish"
+    "test": "node scripts/run-tests.mjs"
   },
   "engines": {
     "node": ">= 24",
@@ -48,8 +48,6 @@
     "@types/react-dom": "^19.2.3",
     "@types/ws": "8.5.4",
     "@vitejs/plugin-react": "^6.0.3",
-    "chalk": "^4.1.2",
-    "changelog-parser": "^3.0.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "eslint-config-standard-with-typescript": "^39.1.1",

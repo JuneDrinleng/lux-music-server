@@ -3,6 +3,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    # 本地构建。已发布镜像：ghcr.io/junedrinleng/lux-music-server（稳定版 :latest，开发版 :dev）
     image: lux-music-server:local
     container_name: lux-music-server
     restart: unless-stopped
