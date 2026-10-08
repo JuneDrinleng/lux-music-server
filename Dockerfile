@@ -19,10 +19,15 @@ ENV BIND_IP=0.0.0.0
 ENV DATA_PATH=/server/data/data
 ENV LOG_PATH=/server/data/logs
 
-# 可选：生产环境建议设置固定 token secret，避免容器重建后登录态全部失效。
+# 生产环境务必设置固定 token secret，避免容器重建后登录态全部失效（未设置会打警告）。
 # ENV LUX_TOKEN_SECRET='change-me'
-# 可选：已有管理员后，如需通过 API 执行 bootstrap 维护操作，可设置该 token。
+# 首次远程 bootstrap 需要此 token；未设置时仅容器内 127.0.0.1/::1 可调用 POST /api/auth/bootstrap。
 # ENV LUX_BOOTSTRAP_TOKEN='change-me'
+# 可选：启动时自动创建管理员（推荐 Docker 首次部署）。
+# ENV LUX_ADMIN_USER='admin'
+# ENV LUX_ADMIN_PASSWORD='change-me'
+# 可选：启动日志明文打印同步连接码（默认脱敏）。
+# ENV LUX_LOG_SYNC_CODES=0
 # 可选：反向代理真实 IP 请求头。
 # ENV PROXY_HEADER='x-real-ip'
 # 可选：配置兼容旧客户端协议的连接码用户。

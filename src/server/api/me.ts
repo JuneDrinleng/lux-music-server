@@ -24,7 +24,7 @@ const updateProfile = async(request: AuthRequest, reply: FastifyReply) => {
   const user = getRequiredAuthUser(request)
   const updatedUser = getAccountStore().updateUser(user.id, {
     displayName: getOptionalProfileString(request.body.displayName, 100),
-    avatar: getOptionalProfileString(request.body.avatar, 2 * 1024 * 1024),
+    avatar: getOptionalProfileString(request.body.avatar, 200 * 1024),
     gender: getGender(request.body.gender),
     signature: getOptionalProfileString(request.body.signature, 140),
   })

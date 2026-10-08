@@ -21,7 +21,7 @@
 7. 初始化日志、模块事件、数据迁移。
 8. 调用 `startServer(port, bindIP)` 启动 HTTP 与 WebSocket 服务。
 
-当前同步用户仍以 `global.lx.config.users` 为核心视图：
+托管账号与连接码用户的关系见 [user-models.md](./user-models.md)。当前同步用户仍以 `global.lx.config.users` 为核心视图：
 
 ```ts
 interface UserConfig {

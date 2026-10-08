@@ -32,6 +32,7 @@ export const authApi = {
   login: (body: { username: string, password: string }) => request<{ token: string, user: PublicUser }>('/api/auth/login', { method: 'POST', body: jsonBody(body) }),
   register: (body: { inviteCode: string, username: string, password: string, displayName?: string }) => request<{ user: PublicUser }>('/api/auth/register', { method: 'POST', body: jsonBody(body) }),
   me: () => request<{ user: PublicUser }>('/api/auth/me'),
+  logout: () => request<{ ok: boolean }>('/api/auth/logout', { method: 'POST' }),
 }
 
 export const meApi = {
