@@ -19,8 +19,8 @@ export const devicePlatformSlices = (devices: Device[]): Slice[] => {
   const mobile = devices.filter(d => d.isMobile).length
   const desktop = devices.length - mobile
   return [
-    { key: 'mobile', label: '移动端', value: mobile, color: 'var(--g-mine)' },
-    { key: 'desktop', label: '桌面端', value: desktop, color: 'var(--g-admin)' },
+    { key: 'mobile', label: '移动端', value: mobile, color: 'var(--accent-lime)' },
+    { key: 'desktop', label: '桌面端', value: desktop, color: 'var(--nav-active)' },
   ].filter(s => s.value > 0)
 }
 
@@ -40,7 +40,7 @@ export const userRoleSlices = (users: UserView[]): Slice[] => {
   const user = users.length - admin
   return [
     { key: 'admin', label: '管理员', value: admin, color: 'var(--g-admin)' },
-    { key: 'user', label: '用户', value: user, color: 'var(--g-mine)' },
+    { key: 'user', label: '用户', value: user, color: 'var(--accent-lime)' },
   ].filter(s => s.value > 0)
 }
 
@@ -49,7 +49,7 @@ export const userStatusSlices = (users: UserView[]): Slice[] => {
   const disabled = users.length - active
   return [
     { key: 'active', label: '正常', value: active, color: 'var(--g-status)' },
-    { key: 'disabled', label: '已禁用', value: disabled, color: 'var(--g-logout)' },
+    { key: 'disabled', label: '已禁用', value: disabled, color: 'var(--divider)' },
   ].filter(s => s.value > 0)
 }
 
@@ -107,16 +107,14 @@ export const onlineVsAuthorized = (authorized: number, online: number): Slice[] 
   { key: 'offline', label: '离线授权', value: Math.max(0, authorized - online), color: 'var(--well)' },
 ].filter(s => s.value > 0)
 
-export const donutGradient = (slices: Slice[]) => {
-  const total = slices.reduce((s, x) => s + x.value, 0)
-  if (!total) return 'conic-gradient(var(--divider) 0 100%)'
-  let acc = 0
-  const parts: string[] = []
-  for (const slice of slices) {
-    const start = (acc / total) * 100
-    acc += slice.value
-    const end = (acc / total) * 100
-    parts.push(`${slice.color} ${start}% ${end}%`)
-  }
-  return `conic-gradient(${parts.join(', ')})`
-}
+/** Segment colors stay on design tokens (lime / nav / group fills). */
+export const segmentColors = {
+  lime: 'var(--accent-lime)',
+  nav: 'var(--nav-active)',
+  mine: 'var(--g-mine)',
+  admin: 'var(--g-admin)',
+  status: 'var(--g-status)',
+  invites: 'var(--g-invites)',
+  password: 'var(--g-password)',
+  muted: 'var(--well)',
+} as const

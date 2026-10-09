@@ -4,7 +4,6 @@ import {
   connectionHourBars,
   devicePlatformSlices,
   inviteUsageSummary,
-  onlineVsAuthorized,
   playlistSourceBars,
   userRoleSlices,
   userSourceSlices,
@@ -46,7 +45,7 @@ import {
   IconUsers,
   IconWifi,
 } from '@/lib/icons'
-import { ChartCard, DonutChart, HBarChart, StatPair, UsageBars } from '@/components/charts'
+import { CapsuleProgress, CapsuleRows, ChartCard, MetricTiles, MiniColumns, SegmentBar, UsageCapsules } from '@/components/charts'
 import { Avatar, Cassette, DotPill, Field, Pill, RoleSeg, SourceTag } from '@/components/primitives'
 import type {
   AdminStatusResponse,
@@ -219,8 +218,8 @@ export function OverviewSection({
             ))}
           </div>
           <div style={{ padding: '0 12px 12px' }}>
-            <ChartCard title="连接时段分布" hint="按最后连接时刻本地聚合">
-              <HBarChart points={connectionHourBars(devices)} unit=" 台" />
+            <ChartCard title="连接时段" hint="按最后连接时刻分桶" compact>
+              <MiniColumns points={connectionHourBars(devices)} />
             </ChartCard>
           </div>
         </div>
@@ -250,8 +249,8 @@ export function OverviewSection({
             })}
           </div>
           <div style={{ padding: '0 12px 12px' }}>
-            <ChartCard title="歌单来源占比" hint="来自同步歌单 source 字段">
-              <HBarChart points={playlistSourceBars(playlists)} unit=" 个" />
+            <ChartCard title="歌单来源" hint="来自同步歌单 source" compact>
+              <CapsuleRows points={playlistSourceBars(playlists)} unit=" 个" />
             </ChartCard>
           </div>
         </div>
@@ -299,11 +298,11 @@ function DevicesCard({ devices, refresh, notify }: { devices: Device[], refresh:
         </div>
       </div>
       <div style={{ padding: '0 12px 12px', display: 'grid', gap: 12 }}>
-        <ChartCard title="设备平台占比" hint="按 isMobile 聚合">
-          <DonutChart slices={devicePlatformSlices(devices)} center="台" />
+        <ChartCard title="设备平台" hint="按 isMobile 聚合" compact>
+          <SegmentBar slices={devicePlatformSlices(devices)} unit=" 台" />
         </ChartCard>
-        <ChartCard title="最近连接时段" hint="按 lastConnectDate 分桶">
-          <HBarChart points={connectionHourBars(devices)} unit=" 台" />
+        <ChartCard title="连接时段" hint="按 lastConnectDate 分桶" compact>
+          <MiniColumns points={connectionHourBars(devices)} />
         </ChartCard>
       </div>
     </div>
@@ -358,8 +357,8 @@ function PlaylistsCard({ playlists, refresh }: { playlists: PlaylistSummary | nu
         ))}
       </div>
       <div style={{ padding: '0 12px 12px' }}>
-        <ChartCard title="歌单来源分布" hint="含默认与我喜欢">
-          <HBarChart points={playlistSourceBars(playlists)} unit=" 个" />
+        <ChartCard title="歌单来源" hint="含默认与我喜欢" compact>
+          <CapsuleRows points={playlistSourceBars(playlists)} unit=" 个" />
         </ChartCard>
       </div>
     </div>
@@ -659,11 +658,23 @@ export function StatusSection({
               ))}
             </div>
           </div>
-          <ChartCard title="在线 / 已授权" hint="在线来自服务状态，授权来自本账号设备">
-            <DonutChart slices={onlineVsAuthorized(devices.length, onlineDevices.length)} center="台" />
+          <ChartCard title="在线 / 已授权" hint="服务状态在线 vs 本账号授权设备">
+            <MetricTiles items={[
+              { label: '在线', value: onlineDevices.length, tone: 'status', hint: '当前连接' },
+              { label: '已授权', value: devices.length, tone: 'lime', hint: '本账号客户端' },
+            ]} />
+            <div style={{ marginTop: 12 }}>
+              <CapsuleProgress
+                label="在线占授权"
+                used={onlineDevices.length}
+                max={Math.max(devices.length, onlineDevices.length, 1)}
+                suffix=" 台"
+                tone="status"
+              />
+            </div>
           </ChartCard>
           <ChartCard title="在线连接时段" hint="按在线设备 lastConnectDate">
-            <HBarChart points={connectionHourBars(onlineDevices)} unit=" 台" />
+            <MiniColumns points={connectionHourBars(onlineDevices)} />
           </ChartCard>
         </div>
       </div>
@@ -820,14 +831,22 @@ export function UsersSection({
       <div className="lux-page-split users">
         <UsersCard users={users} refresh={refresh} notify={notify} />
         <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
-          <ChartCard title="角色占比" hint="来自用户列表 role">
-            <DonutChart slices={userRoleSlices(users)} center="人" />
+          <ChartCard title="用户看板" hint="列表本地聚合">
+            <MetricTiles items={[
+              { label: '全部', value: users.length, tone: 'lime' },
+              { label: '管理员', value: users.filter(u => u.role == 'admin').length, tone: 'admin' },
+              { label: '正常', value: users.filter(u => u.status == 'active').length, tone: 'status' },
+              { label: '已禁用', value: users.filter(u => u.status == 'disabled').length, tone: 'muted' },
+            ]} />
           </ChartCard>
-          <ChartCard title="状态占比" hint="来自用户列表 status">
-            <DonutChart slices={userStatusSlices(users)} center="人" />
+          <ChartCard title="角色构成" hint="来自用户列表 role">
+            <SegmentBar slices={userRoleSlices(users)} unit=" 人" />
           </ChartCard>
-          <ChartCard title="来源分布" hint="managed / config / env">
-            <DonutChart slices={userSourceSlices(users)} center="人" />
+          <ChartCard title="状态构成" hint="来自用户列表 status">
+            <SegmentBar slices={userStatusSlices(users)} unit=" 人" />
+          </ChartCard>
+          <ChartCard title="来源构成" hint="managed / config / env">
+            <SegmentBar slices={userSourceSlices(users)} unit=" 人" />
           </ChartCard>
         </div>
       </div>
@@ -968,15 +987,18 @@ export function InvitesSection({
         <InvitesCard invites={invites} refresh={refresh} notify={notify} />
         <div style={{ display: 'grid', gap: 12, alignContent: 'start' }}>
           <ChartCard title="用量总览" hint="usedCount / maxUses 汇总">
-            <StatPair items={[
-              { label: '已使用次数', value: summary.totalUsed },
-              { label: '总配额', value: summary.totalMax },
-              { label: '可用', value: summary.available },
-              { label: '已用完', value: summary.exhausted },
+            <MetricTiles items={[
+              { label: '已使用', value: summary.totalUsed, tone: 'lime', hint: '次' },
+              { label: '总配额', value: summary.totalMax, tone: 'nav', hint: '次' },
+              { label: '可用', value: summary.available, tone: 'status', hint: '个码' },
+              { label: '已用完', value: summary.exhausted, tone: 'invites', hint: '个码' },
             ]} />
+            <div style={{ marginTop: 12 }}>
+              <CapsuleProgress label="总用量进度" used={summary.totalUsed} max={Math.max(summary.totalMax, 1)} suffix=" 次" tone="lime" />
+            </div>
           </ChartCard>
           <ChartCard title="各邀请码用量" hint="来自列表本地聚合">
-            <UsageBars items={summary.bars} />
+            <UsageCapsules items={summary.bars} />
           </ChartCard>
         </div>
       </div>
