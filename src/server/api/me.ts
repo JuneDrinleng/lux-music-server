@@ -1,6 +1,7 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { getAccountStore } from '@/account/store'
 import { getUserSpace } from '@/user'
+import { removeDevice } from '../server'
 import { getRequiredAuthUser, requireAuth, type AuthRequest } from './authGuard'
 import { getString, isRecord } from './utils'
 
@@ -73,7 +74,7 @@ export const registerMeApi = async(app: FastifyInstance) => {
     const user = getRequiredAuthUser(request)
     const clientId = (request.params as { clientId?: string }).clientId
     if (!clientId) return { ok: false }
-    await getUserSpace(user.username).removeDevice(clientId)
+    await removeDevice(user.username, clientId)
     return { ok: true }
   })
 

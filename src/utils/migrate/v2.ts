@@ -31,12 +31,18 @@ export default (dataPath: string, userPath: string) => {
     const snapshotInfo = JSON.parse(fs.readFileSync(oldSnapshotInfoPath).toString())
     const devicesInfo = JSON.parse(fs.readFileSync(devicesInfoPath).toString())
     snapshotInfo.clients = {}
-    for (const device of (Object.values<ServerKeyInfo>(devicesInfo.clients))) {
+    // Startup deduplication may already have moved credentials into aliases.
+    // Their snapshot baselines still belong to their original client IDs.
+    const devices = [
+      ...Object.values<ServerKeyInfo>(devicesInfo.clients),
+      ...Object.values<ServerKeyInfo>(devicesInfo.clientAliases ?? {}),
+    ]
+    for (const device of devices) {
       snapshotInfo.clients[device.clientId] = {
         snapshotKey: device.snapshotKey,
         lastSyncDate: device.lastSyncDate,
       }
-      device.lastConnectDate = device.lastSyncDate
+      if (device.lastSyncDate !== undefined) device.lastConnectDate = Math.max(device.lastConnectDate ?? 0, device.lastSyncDate)
       delete device.lastSyncDate
       delete device.snapshotKey
     }
@@ -46,4 +52,3 @@ export default (dataPath: string, userPath: string) => {
   }
   setVersion(2)
 }
-

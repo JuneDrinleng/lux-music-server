@@ -49,7 +49,10 @@ export const getUserSpace = (userName: string) => {
         return this.dataManage.getAllClientKeyInfo()
       },
       async removeDevice(clientId) {
-        await listManage.removeDevice(clientId)
+        for (const id of dataManage.getDeviceClientIds(clientId)) {
+          await listManage.removeDevice(id)
+          await dislikeManage.removeDevice(id)
+        }
         await dataManage.removeClientKeyInfo(clientId)
       },
     })

@@ -35,8 +35,11 @@ let host = 'http://localhost'
 // }
 
 const checkDuplicateClient = (newSocket: LX.Socket) => {
+  const dataManage = getUserSpace(newSocket.userInfo.name).dataManage
+  const deviceId = dataManage.getDeviceClientId(newSocket.keyInfo.clientId)
   for (const client of [...wss!.clients]) {
-    if (client === newSocket || client.keyInfo.clientId != newSocket.keyInfo.clientId) continue
+    if (client === newSocket || client.userInfo?.name != newSocket.userInfo.name || !client.keyInfo) continue
+    if (dataManage.getDeviceClientId(client.keyInfo.clientId) != deviceId) continue
     syncLog.info('duplicate client', client.userInfo.name, client.keyInfo.deviceName)
     client.isReady = false
     for (const name of Object.keys(client.moduleReadys) as Array<keyof LX.Socket['moduleReadys']>) {
@@ -68,6 +71,7 @@ const handleConnection = async(socket: LX.Socket, request: IncomingMessage) => {
     return
   }
   keyInfo.lastConnectDate = Date.now()
+  keyInfo.lastSeen = keyInfo.lastConnectDate
   userSpace.dataManage.saveClientKeyInfo(keyInfo)
   //   // socket.lx_keyInfo = keyInfo
   socket.keyInfo = keyInfo
@@ -87,7 +91,8 @@ const handleConnection = async(socket: LX.Socket, request: IncomingMessage) => {
   // handleConnection(io, socket)
   sendStatus(status)
   socket.onClose(() => {
-    status.devices.splice(status.devices.findIndex(k => k.clientId == keyInfo.clientId), 1)
+    const index = status.devices.indexOf(keyInfo)
+    if (index >= 0) status.devices.splice(index, 1)
     sendStatus(status)
   })
 
@@ -375,12 +380,17 @@ export const getDevices = async(userName: string) => {
 }
 
 export const removeDevice = async(userName: string, clientId: string) => {
+  const userSpace = getUserSpace(userName)
+  const clientIds = userSpace.dataManage.getDeviceClientIds(clientId)
   if (wss) {
     for (const client of wss.clients) {
-      if (client.userInfo?.name == userName && client.keyInfo?.clientId == clientId) client.close(SYNC_CLOSE_CODE.normal)
+      if (client.userInfo?.name != userName || !clientIds.includes(client.keyInfo?.clientId)) continue
+      client.isReady = false
+      for (const name of Object.keys(client.moduleReadys) as Array<keyof LX.Socket['moduleReadys']>) {
+        client.moduleReadys[name] = false
+      }
+      client.close(SYNC_CLOSE_CODE.normal)
     }
   }
-  const userSpace = getUserSpace(userName)
   await userSpace.removeDevice(clientId)
 }
-
