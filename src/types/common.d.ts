@@ -17,6 +17,11 @@ declare namespace LX {
       clientId: string
       key: string
       deviceName: string
+      /** Stable installation identifier supplied by newer clients. */
+      deviceId?: string
+      /** Fingerprint of the public key used by legacy LX authorization. */
+      publicKeyHash?: string
+      lastSeen?: number
       lastConnectDate?: number
       isMobile: boolean
     }

@@ -1,6 +1,7 @@
 import type { FastifyInstance } from 'fastify'
 import { getAccountStore } from '@/account/store'
 import { getUserSpace } from '@/user'
+import { removeDevice } from '../server'
 import { getServerStatus } from '../status'
 import { getRequiredAuthUser, requireAdmin, type AuthRequest } from './authGuard'
 import { getNumber, getOptionalString, getString, isRecord } from './utils'
@@ -117,7 +118,7 @@ export const registerAdminApi = async(app: FastifyInstance) => {
     const { id, clientId } = request.params as { id?: string, clientId?: string }
     const user = id ? getAccountStore().findManagedUserById(id) : null
     if (!user || !clientId) return reply.code(404).send({ message: 'User or device not found' })
-    await getUserSpace(user.username).removeDevice(clientId)
+    await removeDevice(user.username, clientId)
     return { ok: true }
   })
 

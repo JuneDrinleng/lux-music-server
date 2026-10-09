@@ -1,4 +1,5 @@
 import type http from 'http'
+import { createHash, createPublicKey } from 'node:crypto'
 import { SYNC_CODE } from '@/constants'
 import {
   aesEncrypt,
@@ -8,7 +9,7 @@ import {
 } from '@/utils/tools'
 import querystring from 'node:querystring'
 import store from '@/utils/cache'
-import { getUserSpace, getUserName, setUserName, createClientKeyInfo } from '@/user'
+import { getUserSpace, getUserName } from '@/user'
 import { toMD5 } from '@/utils'
 
 const getAvailableIP = (req: http.IncomingMessage) => {
@@ -30,11 +31,9 @@ const verifyByKey = (encryptMsg: string, userId: string) => {
   }
   // console.log(text)
   if (text.startsWith(SYNC_CODE.authMsg)) {
-    const deviceName = text.replace(SYNC_CODE.authMsg, '') || 'Unknown'
-    if (deviceName != keyInfo.deviceName) {
-      keyInfo.deviceName = deviceName
-      userSpace.dataManage.saveClientKeyInfo(keyInfo)
-    }
+    keyInfo.deviceName = text.slice(SYNC_CODE.authMsg.length) || 'Unknown'
+    keyInfo.lastSeen = Date.now()
+    userSpace.dataManage.saveClientKeyInfo(keyInfo)
     return aesEncrypt(SYNC_CODE.helloMsg, keyInfo.key)
   }
   return null
@@ -53,13 +52,32 @@ const verifyByCode = (encryptMsg: string, users: LX.Config['users']) => {
     // console.log(text)
     if (text.startsWith(SYNC_CODE.authMsg)) {
       const data = text.split('\n')
-      const publicKey = `-----BEGIN PUBLIC KEY-----\n${data[1]}\n-----END PUBLIC KEY-----`
+      if (data[0] != SYNC_CODE.authMsg || !data[1]) return null
+      const deviceId = data[4]?.trim() || undefined
+      if (data[4] && data[4].length > 256) return null
+      let publicKey: string
+      let publicKeyHash: string
+      try {
+        const parsedKey = createPublicKey(`-----BEGIN PUBLIC KEY-----\n${data[1]}\n-----END PUBLIC KEY-----`)
+        if (parsedKey.asymmetricKeyType != 'rsa') return null
+        publicKey = parsedKey.export({ type: 'spki', format: 'pem' }).toString()
+        publicKeyHash = createHash('sha256').update(parsedKey.export({ type: 'spki', format: 'der' })).digest('hex')
+        // Validate the response key before persisting a new device. A malformed
+        // or undersized RSA key must not leave an unusable authorization behind.
+        rsaEncrypt(Buffer.from(JSON.stringify({
+          clientId: 'x'.repeat(24), key: 'x'.repeat(24), serverName: global.lx.config.serverName,
+        })), publicKey)
+      } catch { return null }
       const deviceName = data[2] || 'Unknown'
       const isMobile = data[3] == 'lx_music_mobile'
-      const keyInfo = createClientKeyInfo(deviceName, isMobile)
       const userSpace = getUserSpace(userInfo.name)
-      userSpace.dataManage.saveClientKeyInfo(keyInfo)
-      setUserName(keyInfo.clientId, userInfo.name)
+      let keyInfo: LX.Sync.KeyInfo
+      try {
+        keyInfo = userSpace.dataManage.upsertClientKeyInfo({ deviceId, publicKeyHash, deviceName, isMobile })
+      } catch (err) {
+        if (err instanceof Error && err.message == 'Conflicting device identity') return null
+        throw err
+      }
       return rsaEncrypt(Buffer.from(JSON.stringify({
         clientId: keyInfo.clientId,
         key: keyInfo.key,
@@ -131,4 +149,3 @@ export const authConnect = async(req: http.IncomingMessage) => {
   }
   throw new Error('failed')
 }
-

@@ -74,9 +74,11 @@ lx-music auth::
 lx_music_mobile
 ```
 
+可选在第五行追加持久化的 `deviceId`（去除首尾空白后非空，原始长度不超过 256 个字符）。旧版四行消息仍然有效。服务端优先按 `deviceId` 查找设备；未提供时，以规范化 RSA 公钥的 SHA-256 指纹识别重复认证，因此保留同一 RSA 密钥的重试也能复用凭据。
+
 7. 移动端用连接码派生的 AES key 加密该明文，并将结果放到请求头 `m`，请求 `/ah`。
 8. 服务端 `verifyByCode()` 遍历同步用户的连接码，尝试用每个连接码派生 key 解密 `m`。
-9. 某个用户解密成功后，服务端创建设备信息：
+9. 某个用户解密成功后，服务端复用已匹配设备的 `clientId` / `key`，更新名称、平台及 `lastSeen`；仅未匹配时创建设备信息：
    - `clientId`
    - `key`
    - `deviceName`
@@ -112,7 +114,7 @@ lx_music_mobile
    - header `m`: 加密消息
 6. 服务端 `verifyByKey()` 根据 `clientId` 找用户名和设备 key。
 7. 服务端解密并验证消息以 `SYNC_CODE.authMsg` 开头。
-8. 成功后返回用设备 key 加密的 hello 文本。
+8. 更新设备名称及 `lastSeen`，返回用设备 key 加密的 hello 文本。
 
 该流程是现有移动端自动重连的基础，不能破坏。
 
@@ -323,6 +325,23 @@ Lux 模式与 LX 模式的差异只在“如何获取 `KeyInfo`”：
 ```
 
 因此服务端 list/dislike 同步核心、快照合并、实时广播逻辑都可以复用。
+
+`POST /api/sync/key` 支持以下可选 JSON 字段，使用登录后的 bearer token 认证：
+
+```json
+{
+  "deviceId": "持久化的安装标识，例如首次安装时生成的 UUID",
+  "clientId": "可选：此前签发并保存在本机的 clientId",
+  "deviceName": "我的手机",
+  "platform": "lx_music_mobile"
+}
+```
+
+`deviceId` 应在每次重连、重新登录时保持不变，不能使用连接 ID 或登录 token。服务端在当前账号内优先匹配 `deviceId`，也支持已有 `clientId` 作为回退；两者可一起发送，用于给旧凭据补充安装标识。同一身份重复请求会复用已有 `clientId` / `key`，更新 `lastSeen`，并在提供名称、平台时更新它们，省略则保留原值。两个标识指向冲突身份时返回 `409`；标识不是字符串、仅含空白或原始长度超过 256 时返回 `400`，合法标识去除首尾空白后保存。响应格式保持不变，`lastSeen` 是服务端设备记录字段。
+
+修复前，接口每次调用都生成随机凭据，管理页面又直接按 `clientId` 列出设备，因此重复申请凭据会导致设备数增长。普通 `/ah` 已授权认证和 WebSocket 重连本来就复用凭据，协议保持兼容；管理 UI 无需改动。不能仅凭服务端判断缺席的 `lux-music-mobile` 仓库是否丢弃了凭据。移动端应按 `serverId` 保存并复用 `KeyInfo`，需要重新申请时携带稳定 `deviceId` 或已有 `clientId`。
+
+加载设备数据时会保守合并可确认的重复记录：相同 `deviceId`；均无 `deviceId` 且 RSA 公钥指纹相同；均无上述身份信息且随机 AES key 相同。合并后保留最新设备信息，将旧凭据保存为 `clientAliases`，继续接受原来的 ID / key；歌单和 dislike 的原 `clientId` 快照游标、快照文件保持不变，避免破坏旧客户端的同步基线。删除设备会撤销全部别名，并清理两类快照游标。仅名称、平台或 IP 相同的历史记录不会合并；没有稳定标识、每次又使用全新凭据的请求，服务端无法可靠判断是否来自同一物理设备。
 
 听歌记录是这条通道上的可选能力，不新开连接，也不改 `/hello`、`/id`、`/ah` 和 list/dislike 消息。旧客户端只认 `list` / `dislike`，会忽略 `featureVersion` 里的 `playHistory`，因此不会启用它。
 
