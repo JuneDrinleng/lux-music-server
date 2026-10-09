@@ -162,6 +162,7 @@ Fastify 重构后，WebSocket 仍挂在 Fastify 底层 Node server 的 `upgrade`
 - `dataManage`: 设备与用户数据管理。
 - `listManage`: 歌单快照和数据管理。
 - `dislikeManage`: dislike 规则快照和数据管理。
+- `playHistoryManage`: Lux 听歌记录（仅客户端声明 `playHistory` 能力后才会读写）。
 
 ## 7. message2call RPC 协议
 
@@ -201,6 +202,7 @@ Fastify 重构后，WebSocket 仍挂在 Fastify 底层 Node server 的 `upgrade`
 - `onFeatureChanged(feature)`
 - `onListSyncAction(action)`
 - `onDislikeSyncAction(action)`
+- `playHistory:push` / `playHistory:pull`（仅 Lux 听歌记录，见第 13 节；旧版 LX 客户端不会调用）
 
 当前 WebSocket payload 大消息会 gzip 后加 `cg_` 前缀；认证阶段仍使用 AES/RSA。公网部署仍应使用 HTTPS/WSS。
 
@@ -321,3 +323,48 @@ Lux 模式与 LX 模式的差异只在“如何获取 `KeyInfo`”：
 ```
 
 因此服务端 list/dislike 同步核心、快照合并、实时广播逻辑都可以复用。
+
+听歌记录是这条通道上的可选能力，不新开连接，也不改 `/hello`、`/id`、`/ah` 和 list/dislike 消息。旧客户端只认 `list` / `dislike`，会忽略 `featureVersion` 里的 `playHistory`，因此不会启用它。
+
+## 13. Lux 听歌记录（play history）
+
+只加在现有 message2call 上，给声明了该能力的 Lux 客户端用。LX 连接码客户端的握手、歌单和 dislike 流程不变。
+
+握手：服务端 `featureVersion.playHistory` 为 `1`（`list` / `dislike` 仍是 `1`）。客户端在 `getEnabledFeatures` 的返回值里带 `playHistory: true` 才算启用。没带这个字段的旧客户端会被当成不支持，服务端不会向它发起新的远程调用。`finished()` 之后客户端再拉推记录。
+
+消息名（message2call 的方法路径，各一段）：
+
+| 方向 | 方法名 | 请求 | 响应 |
+| --- | --- | --- | --- |
+| 客户端 → 服务端 | `playHistory:push` | `{ records: Record[] }` | `{ accepted: number, ignored: number, cursor: number }` |
+| 客户端 → 服务端 | `playHistory:pull` | `{ since?: number }`，省略 `since` 则从 `0` 起 | `{ records: Record[], cursor: number, hasMore: boolean }` |
+
+`Record`（线上不带 `receivedAt`）：
+
+```ts
+{
+  id: string // 必须等于 `${deviceId}:${startedAt}`
+  deviceId: string
+  startedAt: number
+  endedAt: number
+  listenedMs: number
+  song: {
+    source: string
+    songmid: string
+    name: string
+    singer: string
+    albumName?: string
+    interval?: string
+    img?: string
+  }
+}
+```
+
+语义：
+
+- 按用户合并所有设备。`id` 已存在则忽略（不更新、不另存一条），因此同一条记录重试是幂等的。
+- 新记录写入服务端单调游标 `receivedAt`（只存在磁盘上，不出现在响应的 `records` 里）。
+- `push` 单批最多 500 条。任一记录形状或长度不合法时，整批拒绝，不写入。
+- `pull` 返回 `receivedAt > since` 的记录，按 `receivedAt` 升序，每页最多 1000 条。下一次请求把本次响应的 `cursor` 当作 `since`。本页有数据时，`cursor` 是本页最后一条的 `receivedAt`；本页为空时，`cursor` 不会小于本次请求的 `since`。
+- 不做删除。数据在该用户目录 `playHistory/records.json`，先写临时文件并 fsync，再 rename。重启后从该文件恢复。
+- 未启用 `playHistory` 时调用这两个方法会得到错误 `playHistory is not enabled`。

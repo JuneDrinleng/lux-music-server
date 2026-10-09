@@ -19,6 +19,12 @@ declare namespace LX {
     }>
     type ServerSyncHandlerDislikeActions<Socket> = WarpSyncHandlerActions<Socket, ServerSyncDislikeActions>
 
+    type ServerSyncPlayHistoryActions = WarpPromiseRecord<{
+      'playHistory:push': (payload: LX.Sync.PlayHistory.PushRequest) => LX.Sync.PlayHistory.PushResult
+      'playHistory:pull': (payload?: LX.Sync.PlayHistory.PullRequest) => LX.Sync.PlayHistory.PullResult
+    }>
+    type ServerSyncHandlerPlayHistoryActions<Socket> = WarpSyncHandlerActions<Socket, ServerSyncPlayHistoryActions>
+
     type ClientSyncActions = WarpPromiseRecord<{
       getEnabledFeatures: (serverType: ServerType, supportedFeatures: SupportedFeatures) => EnabledFeatures
       finished: () => void
