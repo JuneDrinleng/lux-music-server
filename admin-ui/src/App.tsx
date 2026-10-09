@@ -1,6 +1,4 @@
 import { useEffect, useState } from 'react'
-import { authApi, getToken, meApi, adminApi, setToken } from '@/lib/api'
-import { Toast } from '@/components/primitives'
 import { AuthScreen } from '@/components/AuthScreen'
 import { DashboardShell } from '@/components/DashboardShell'
 import {
@@ -11,16 +9,15 @@ import {
   StatusSection,
   UsersSection,
 } from '@/components/pages'
+import { Toast } from '@/components/primitives'
+import { adminApi, authApi, getToken, meApi, setToken } from '@/lib/api'
 import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, SectionId, UserView } from '@/types'
 
-const navItems: Array<{ id: SectionId, adminOnly?: boolean }> = [
-  { id: 'overview' },
-  { id: 'devices-playlists' },
-  { id: 'account-sync' },
-  { id: 'admin-status', adminOnly: true },
-  { id: 'users', adminOnly: true },
-  { id: 'invites', adminOnly: true },
-]
+const navAdminOnly: Partial<Record<SectionId, boolean>> = {
+  'admin-status': true,
+  users: true,
+  invites: true,
+}
 
 function App() {
   const [me, setMe] = useState<PublicUser | null>(null)
@@ -43,7 +40,7 @@ function App() {
   }, [message])
 
   useEffect(() => {
-    if (me?.role != 'admin' && navItems.find(item => item.id == activeSection)?.adminOnly) setActiveSection('overview')
+    if (me?.role != 'admin' && navAdminOnly[activeSection]) setActiveSection('overview')
   }, [activeSection, me])
 
   const loadBootstrap = async() => {
@@ -112,14 +109,12 @@ function App() {
 
   if (loading) {
     return (
-      <>
-        <Toast message={message} />
-        <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 18 }}>
-          <div className="lux-card" style={{ padding: 24, minWidth: 220, textAlign: 'center' }}>
-            <div className="lux-note">加载中...</div>
-          </div>
+      <div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', padding: 24 }}>
+        <div className="lux-card" style={{ padding: 24 }}>
+          <p className="lux-note">加载中...</p>
         </div>
-      </>
+        <Toast message={message} />
+      </div>
     )
   }
 
@@ -150,17 +145,10 @@ function App() {
       )
     }
     if (activeSection == 'account-sync') {
-      return (
-        <AccountSection
-          me={me}
-          adminStatus={adminStatus}
-          onLogout={logout}
-          notify={notify}
-        />
-      )
+      return <AccountSection me={me} adminStatus={adminStatus} onLogout={logout} notify={notify} />
     }
     if (activeSection == 'admin-status' && me.role == 'admin') {
-      return <StatusSection status={adminStatus} refresh={loadAdminStatus} />
+      return <StatusSection status={adminStatus} devices={devices} refresh={loadAdminStatus} notify={notify} />
     }
     if (activeSection == 'users' && me.role == 'admin') {
       return <UsersSection users={users} refresh={loadUsers} notify={notify} />

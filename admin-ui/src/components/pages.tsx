@@ -14,7 +14,6 @@ import {
   addressKind,
   formatDate,
   formatOptionalDate,
-  initialOf,
   roleLabel,
   statusLabel,
   stripWsHost,
@@ -984,6 +983,3 @@ export function InvitesSection({
     </div>
   )
 }
-
-// silence unused import if tree-shaken oddly
-void initialOf

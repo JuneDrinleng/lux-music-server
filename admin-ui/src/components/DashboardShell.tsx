@@ -15,7 +15,17 @@ import {
 import { Avatar } from '@/components/primitives'
 import { formatChineseDate, greetingForNow, roleLabel } from '@/lib/format'
 import type { PublicUser, SectionId } from '@/types'
-import { getSectionTitle } from '@/components/pages'
+
+const sectionTitles: Record<SectionId, string> = {
+  overview: '总览',
+  'devices-playlists': '设备与歌单',
+  'account-sync': '账号与连接码',
+  'admin-status': '服务状态',
+  users: '用户',
+  invites: '邀请码',
+}
+
+const getSectionTitle = (id: SectionId) => sectionTitles[id] ?? '总览'
 
 interface NavItem {
   id: SectionId
