@@ -65,6 +65,8 @@ export const File = {
   dislikeDir: 'dislike',
   dislikeSnapshotDir: 'snapshot',
   dislikeSnapshotInfoJSON: 'snapshotInfo.json',
+  playHistoryDir: 'playHistory',
+  playHistoryJSON: 'records.json',
 } as const
 
 export const FeaturesList = [

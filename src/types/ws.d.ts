@@ -11,6 +11,7 @@ declare global {
       moduleReadys: {
         list: boolean
         dislike: boolean
+        playHistory: boolean
       }
 
       onClose: (handler: (err: Error) => (void | Promise<void>)) => () => void

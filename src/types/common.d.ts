@@ -31,6 +31,8 @@ declare namespace LX {
     interface EnabledFeatures {
       list?: false | ListConfig
       dislike?: false | DislikeConfig
+      /** Lux listening history. Absent on legacy LX clients. */
+      playHistory?: false | true
     }
     type SupportedFeatures = Partial<{ [k in keyof EnabledFeatures]: number }>
   }

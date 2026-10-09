@@ -1,5 +1,5 @@
 import { FeaturesList } from '@/constants'
-import { featureVersion, modules } from '@/modules'
+import { featureVersion, modules, playHistoryModule } from '@/modules'
 
 
 export const sync = async(socket: LX.Socket) => {
@@ -17,5 +17,11 @@ export const sync = async(socket: LX.Socket) => {
     }
     if (disconnected) throw new Error('disconnected')
   }
+  // Optional Lux feature. Omitted by legacy LX clients, so their sync path stops above.
+  if (enabledFeatures.playHistory) {
+    socket.feature.playHistory = true
+    await playHistoryModule.sync(socket).catch(_ => _)
+  }
+  if (disconnected) throw new Error('disconnected')
   await socket.remote.finished()
 }
