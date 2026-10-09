@@ -30,7 +30,7 @@ env:
 
 jobs:
   plan:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       skip: ${{ steps.p.outputs.skip }}
       version: ${{ steps.p.outputs.version }}
@@ -39,12 +39,12 @@ jobs:
       prev_tag: ${{ steps.p.outputs.prev_tag }}
       republish: ${{ steps.p.outputs.republish }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
 
@@ -113,7 +113,7 @@ jobs:
   publish:
     needs: plan
     if: needs.plan.outputs.skip == 'false'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 40
     env:
       TAG: ${{ needs.plan.outputs.tag }}
@@ -121,7 +121,7 @@ jobs:
       PRE: ${{ needs.plan.outputs.prerelease }}
       PREV: ${{ needs.plan.outputs.prev_tag }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           fetch-tags: true
@@ -140,7 +140,7 @@ jobs:
           [ "$ok" = 1 ]
           git checkout --detach "$TAG"
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
@@ -159,10 +159,10 @@ jobs:
           test -d server
           zip -r "lux-music-server_${TAG}.zip" server ecosystem.config.js config.js index.js package-lock.json package.json LICENSE Readme.md
 
-      - uses: docker/setup-buildx-action@v3
+      - uses: docker/setup-buildx-action@v4
 
       - name: 登录 GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -201,7 +201,7 @@ jobs:
 
       - name: 构建并推送镜像
         if: steps.image.outputs.exists != 'true'
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile
@@ -246,6 +246,6 @@ jobs:
   notice:
     needs: plan
     if: needs.plan.outputs.skip == 'true'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - run: echo "跳过发布：tag 已存在，或 dev 与最新稳定版代码相同 / HEAD 已有 dev tag。不会覆盖已有 Release 或镜像。"
