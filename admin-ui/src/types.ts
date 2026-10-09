@@ -43,11 +43,18 @@ export interface PlaylistSummary {
   userList: PlaylistItem[]
 }
 
+export interface OnlineDevice {
+  clientId?: string
+  deviceName?: string
+  isMobile?: boolean
+  lastConnectDate?: number
+}
+
 export interface ServerStatus {
   status: boolean
   message?: string
   address?: string[]
-  devices?: unknown[]
+  devices?: OnlineDevice[]
 }
 
 export interface AdminStatusResponse {
@@ -69,3 +76,5 @@ export interface Invite {
   createdAt: number
   usedBy: Array<{ userId: string, username: string, usedAt: number }>
 }
+
+export type SectionId = 'overview' | 'devices-playlists' | 'account-sync' | 'admin-status' | 'users' | 'invites'
