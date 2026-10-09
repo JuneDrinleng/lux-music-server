@@ -27,6 +27,7 @@ concurrency:
 
 env:
   IMAGE: ghcr.io/junedrinleng/lux-music-server
+  DEV_RELEASES_KEEP: '2'
 
 jobs:
   plan:
@@ -242,6 +243,56 @@ jobs:
             fi
             gh release create "$TAG" "$asset" --verify-tag --title "$TAG" --notes-file notes.md --latest
           fi
+
+      # 仅 DEV 预发布：发布成功后只保留最新 N 个含 -dev. 的预发布，删除更旧的 Release 及其 git tag。
+      # 不触碰稳定版；不删 GHCR 镜像。单条删除失败不导致整次发布失败。
+      - name: 清理旧的 DEV 预发布
+        if: env.PRE == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -uo pipefail
+          keep="${DEV_RELEASES_KEEP:-2}"
+          mapfile -t all_dev < <(
+            gh release list --limit 200 --json tagName,createdAt \
+              --jq '[.[] | select(.tagName | contains("-dev."))] | sort_by(.createdAt) | reverse | .[].tagName'
+          )
+          echo "找到 ${#all_dev[@]} 个 DEV 预发布（按创建时间新→旧）"
+          if [ "${#all_dev[@]}" -eq 0 ]; then
+            echo "无需清理"
+            exit 0
+          fi
+          kept=()
+          to_delete=()
+          i=0
+          for tag in "${all_dev[@]}"; do
+            if [ "$i" -lt "$keep" ]; then
+              kept+=("$tag")
+            else
+              to_delete+=("$tag")
+            fi
+            i=$((i + 1))
+          done
+          echo "保留（最新 ${keep} 个）："
+          if [ "${#kept[@]}" -eq 0 ]; then
+            echo "  （无）"
+          else
+            printf '  %s\n' "${kept[@]}"
+          fi
+          echo "将删除："
+          if [ "${#to_delete[@]}" -eq 0 ]; then
+            echo "  （无）"
+          else
+            printf '  %s\n' "${to_delete[@]}"
+          fi
+          for tag in "${to_delete[@]}"; do
+            echo "删除 $tag …"
+            if gh release delete "$tag" --yes --cleanup-tag; then
+              echo "已删除 $tag（含 git tag）"
+            else
+              echo "警告：删除 $tag 失败，继续" >&2
+            fi
+          done
 
   notice:
     needs: plan
