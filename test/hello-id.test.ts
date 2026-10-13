@@ -29,5 +29,6 @@ describe('sync protocol contracts', () => {
     assert.equal(res.statusCode, 200)
     const body = parseJson(res.body)
     assert.equal(body.ok, true)
+    assert.equal(typeof body.version, 'string')
   })
 })

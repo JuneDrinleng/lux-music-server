@@ -71,6 +71,8 @@ export class ScriptSandboxHost {
   private restarting: Promise<void> | null = null
   private restartTimer: NodeJS.Timeout | null = null
   private allowAutoRestart = true
+  /** Set when the worker posts type:error (uncaught/unhandled); survives exit/restart formatting. */
+  private lastWorkerFatalError: string | null = null
   private initWait: { resolve: () => void, reject: (err: Error) => void, timer: NodeJS.Timeout } | null = null
   private logLines: string[] = []
   readonly id: string
@@ -148,7 +150,12 @@ export class ScriptSandboxHost {
     this.heartbeatTimer = null
   }
 
+  private workerFailureDetail(code: number | null, fallback: string) {
+    return this.lastWorkerFatalError ?? fallback ?? `worker exited with code ${code ?? 1}`
+  }
+
   private async spawnWorker(): Promise<void> {
+    this.lastWorkerFatalError = null
     const settings = getSourceSettings()
     const meta = {
       name: this.view.name,
@@ -185,6 +192,7 @@ export class ScriptSandboxHost {
       }
       if (msg.type == 'error') {
         const message = msg.message ?? 'worker error'
+        this.lastWorkerFatalError = message
         this.setView({ status: 'error', error: message })
         this.initWait?.reject(new Error(message))
         return
@@ -200,16 +208,22 @@ export class ScriptSandboxHost {
 
     worker.on('exit', code => {
       if (code == 0 || this.view.status == 'disabled') return
-      const reason = `worker exited with code ${code}`
-      this.initWait?.reject(new Error(reason))
-      void this.handleWorkerExit(reason)
+      const fallback = `worker exited with code ${code}`
+      const detail = this.workerFailureDetail(code, fallback)
+      if (this.initWait) {
+        this.setView({ status: 'error', error: detail })
+        this.initWait.reject(new Error(detail))
+        return
+      }
+      void this.handleWorkerExit(detail)
     })
   }
 
   private async handleWorkerExit(reason: string) {
     if (this.view.status == 'disabled' || !this.allowAutoRestart) return
-    this.setView({ status: 'error', error: reason })
-    await this.scheduleRestart(reason)
+    const detail = this.workerFailureDetail(null, reason)
+    this.setView({ status: 'error', error: detail })
+    await this.scheduleRestart(detail)
   }
 
   private async handleWorkerStuck() {
@@ -224,7 +238,8 @@ export class ScriptSandboxHost {
     if (this.restarting) return this.restarting
     this.restartAttempts++
     const delay = Math.min(60_000, 1000 * 2 ** Math.min(this.restartAttempts - 1, 6))
-    this.setView({ status: 'error', error: `${reason}; restarting in ${delay}ms` })
+    const detail = this.workerFailureDetail(null, reason)
+    this.setView({ status: 'error', error: `${detail}; restarting in ${delay}ms` })
     this.restarting = new Promise(resolve => {
       this.restartTimer = setTimeout(() => {
         this.restartTimer = null
