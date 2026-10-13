@@ -1,5 +1,5 @@
 import { FeaturesList } from '@/constants'
-import { featureVersion, modules, playHistoryModule, sourceModule } from '@/modules'
+import { featureVersion, modules, playHistoryModule, sourceModule, togetherModule } from '@/modules'
 
 
 export const sync = async(socket: LX.Socket) => {
@@ -21,6 +21,10 @@ export const sync = async(socket: LX.Socket) => {
   if (enabledFeatures.playHistory) {
     socket.feature.playHistory = true
     await playHistoryModule.sync(socket).catch(_ => _)
+  }
+  if (enabledFeatures.together) {
+    socket.feature.together = true
+    await togetherModule.sync(socket).catch(_ => _)
   }
   if (enabledFeatures.source) {
     socket.feature.source = true

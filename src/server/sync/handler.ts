@@ -1,7 +1,7 @@
 // 这个文件导出的方法将暴露给客户端调用，第一个参数固定为当前 socket 对象
 // import { getUserSpace } from '@/user'
 import { FeaturesList } from '@/constants'
-import { modules, playHistoryModule, sourceModule } from '@/modules'
+import { modules, playHistoryModule, sourceModule, togetherModule } from '@/modules'
 
 
 const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
@@ -20,6 +20,11 @@ const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
       beforeFeature.playHistory = !!feature.playHistory
       socket.moduleReadys.playHistory = false
       if (feature.playHistory) await playHistoryModule.sync(socket).catch(_ => _)
+    }
+    if (feature.together != null) {
+      beforeFeature.together = !!feature.together
+      socket.moduleReadys.together = false
+      if (feature.together) await togetherModule.sync(socket).catch(_ => _)
     }
     if (feature.source != null) {
       beforeFeature.source = !!feature.source

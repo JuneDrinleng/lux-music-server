@@ -1,4 +1,4 @@
-import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, Role, SourcesAdminResponse, UserStatus, UserView } from '@/types'
+import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, Role, SourcesAdminResponse, TogetherRoomsResponse, UserStatus, UserView } from '@/types'
 
 export const tokenKey = 'lux_sync_admin_token'
 
@@ -60,4 +60,8 @@ export const adminApi = {
   enableSource: (id: string) => request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/enable`, { method: 'POST' }),
   disableSource: (id: string) => request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/disable`, { method: 'POST' }),
   deleteSource: (id: string) => request<{ ok: boolean }>(`/api/admin/sources/${id}`, { method: 'DELETE' }),
+}
+
+export const togetherApi = {
+  rooms: () => request<TogetherRoomsResponse>('/api/admin/together/rooms'),
 }

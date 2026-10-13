@@ -12,6 +12,7 @@ declare global {
         list: boolean
         dislike: boolean
         playHistory: boolean
+        together: boolean
         source: boolean
       }
 

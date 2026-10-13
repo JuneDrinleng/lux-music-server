@@ -131,9 +131,12 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 300s;
     }
 }
 ```
+
+**WebSocket 长连接**：同步服务每 30 秒向每个客户端发送一次 ping（应用层心跳）。若前面还有云厂商负载均衡或 Nginx，请把 `proxy_read_timeout` 设为 **≥ 300 秒**（示例已写入上方配置），并确保 `Upgrade` / `Connection` 头正确转发，否则空闲连接可能被中间层提前断开。一起听等功能依赖稳定的 WSS 连接。
 
 如果你当前 `server` 块下存在其他服务，那么可以配置路径前缀转发：
 
@@ -152,11 +155,14 @@ server {
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection $connection_upgrade;
+        proxy_read_timeout 300s;
     }
 }
 ```
 
 *注：上面的 `xxx` 是你想要代理的路径前缀（可以多级）。*
+
+**一起听（Listen Together）**：房间状态只保存在**单个进程内存**中，不落盘。容器重启、发版或进程崩溃会清空所有进行中的房间；客户端应提示房间已结束。**当前不支持多实例/多副本**（不要在负载均衡后水平扩展多个无共享状态的副本来托管一起听）。创建房间仅能通过已登录 Lux 账号的 App WebSocket 调用，管理后台只能只读查看活跃房间数。
 
 注意 `$remote_addr` 的转发名字与 `config.js` 中的 `proxy.header` 对应，并同时启用 `proxy.enabled`（或与环境变量的 `PROXY_HEADER` 对应），这用于校验相同 IP 多次使用错误连接码连接时的封禁。
 
@@ -210,6 +216,9 @@ server {
 | `LUX_BOOTSTRAP_TOKEN` | 首次创建管理员的保护 token。未配置时，`POST /api/auth/bootstrap` **仅允许**来自本机回环地址（`127.0.0.1` / `::1`）的请求；公网 / Docker 端口映射访问会被拒绝。配置后，远程请求需在请求头携带 `x-lux-bootstrap-token: <token>`。也可用 `LUX_ADMIN_USER` + `LUX_ADMIN_PASSWORD` 在启动时直接创建管理员，避免走 bootstrap。 |
 | `LUX_ADMIN_USER` / `LUX_ADMIN_PASSWORD` | 可选。若同时设置且该用户尚不存在，启动时自动创建管理员账号（适合 Docker 首次部署）。 |
 | `LUX_LOG_SYNC_CODES` | 设为 `1` 或 `true` 时，启动日志明文打印同步连接码；默认脱敏。`DEBUG` 非空时同样打印明文。 |
+| `LUX_TOGETHER_MAX_MEMBERS` | 一起听单房间成员上限（**含房主**），默认 `10`，合法范围 2–50。 |
+| `LUX_TOGETHER_MAX_ROOMS` | 服务端同时存在的房间数上限，默认 `100`。 |
+| `LUX_TOGETHER_GRACE_MS` | 成员/房主断线后的宽限期（毫秒），默认 `30000`，合法范围 5000–300000。 |
 | `LUX_SOURCE_TIMEOUT_MS` | Lux 模式下单次音源脚本 action 与初始化超时（毫秒），默认 `15000`，合法范围 1000–60000。 |
 | `LUX_SOURCE_MEMORY_MB` | 每个已启用脚本的 worker `maxOldGenerationSizeMb`，默认 `128`，合法范围 32–1024。 |
 | `LUX_SOURCE_PROXY_STREAM` | 设为 `true` 或 `1` 时，`resolveMusicUrl` 返回 `/api/source/stream/…` 代理路径（默认关）。 |
@@ -314,11 +323,13 @@ http://<服务器 IP>:9527/admin
 
 #### 反向代理与 HTTPS
 
-公网部署时建议使用 Nginx/Caddy 等反向代理提供 HTTPS/WSS，并正确转发 WebSocket upgrade 请求。如果启用了真实 IP 转发，请同步设置 `PROXY_HEADER`，例如：
+公网部署时建议使用 Nginx/Caddy 等反向代理提供 HTTPS/WSS，并正确转发 WebSocket upgrade 请求（`Upgrade`、`Connection`，以及 Nginx 的 `proxy_read_timeout ≥ 300s`，见上文「配置 Nginx」）。如果启用了真实 IP 转发，请同步设置 `PROXY_HEADER`，例如：
 
 ```bash
 -e PROXY_HEADER=x-real-ip
 ```
+
+一起听房间为单实例内存状态，Docker 部署时请保持**一个**同步服务实例；多副本需等后续版本支持共享存储后再考虑。
 
 服务名称 `serverName` 当前请通过 `config.js` 配置；`SERVER_NAME` 环境变量目前不是有效配置项。
 

@@ -79,6 +79,12 @@ export interface Invite {
 
 export type SectionId = 'overview' | 'devices-playlists' | 'account-sync' | 'admin-status' | 'users' | 'invites' | 'sources'
 
+export interface TogetherRoomsResponse {
+  activeRooms: number
+  members: number
+  onlineMembers: number
+}
+
 export interface SourceScriptView {
   id: string
   name: string

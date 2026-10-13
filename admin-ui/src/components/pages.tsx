@@ -1,5 +1,6 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { adminApi, meApi } from '@/lib/api'
+import { togetherApi } from '@/lib/api'
 import {
   connectionHourBars,
   devicePlatformSlices,
@@ -58,6 +59,7 @@ import type {
   SectionId,
   UserView,
 } from '@/types'
+import type { TogetherRoomsResponse } from '@/types'
 
 const COVER_COLORS = ['#ece6f2', '#ebe4d7', '#e4e8f1', '#f6e2e7']
 
@@ -77,6 +79,22 @@ export const getSectionTitle = (id: SectionId) => {
 const getFormString = (form: HTMLFormElement, name: string) => {
   const value = new FormData(form).get(name)
   return typeof value == 'string' ? value.trim() : ''
+}
+
+function TogetherRoomsMetric() {
+  const [rooms, setRooms] = useState<TogetherRoomsResponse | null>(null)
+  useEffect(() => {
+    let active = true
+    togetherApi.rooms().then(data => { if (active) setRooms(data) }).catch(() => {})
+    return () => { active = false }
+  }, [])
+  return (
+    <div className="lux-card lux-metric">
+      <div className="top"><IconCircle tone="admin"><IconMusicNote /></IconCircle><Pill tone="violet">管理员</Pill></div>
+      <div className="v">{rooms?.activeRooms ?? '—'}</div>
+      <div><div className="l">一起听房间</div><div className="h">{rooms ? `在线成员 ${rooms.onlineMembers} / ${rooms.members}` : '房间只由 App 创建'}</div></div>
+    </div>
+  )
 }
 
 const playlistLists = (playlists: PlaylistSummary | null): PlaylistItem[] => (
@@ -143,7 +161,7 @@ export function OverviewSection({
         ) : null}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? 'repeat(4, 1fr)' : 'repeat(2, 1fr)', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? 'repeat(5, 1fr)' : 'repeat(2, 1fr)', gap: 12 }}>
         <div className="lux-card lux-metric">
           <div className="top"><IconCircle tone="mine"><IconDevices /></IconCircle></div>
           <div className="v">{devices.length}</div>
@@ -166,6 +184,7 @@ export function OverviewSection({
               <div className="v">{adminStatus?.invites ?? invites.length}</div>
               <div><div className="l">邀请码</div><div className="h">当前保存的邀请入口</div></div>
             </div>
+            <TogetherRoomsMetric />
           </>
         ) : null}
       </div>
