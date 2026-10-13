@@ -183,7 +183,7 @@ server {
 2. 执行 `npm ci` 与 `npm run build`；
 3. 重启你的服务。
 
-使用 Docker 时，可以把代码更新到最新后重新构建镜像，也可以直接拉取 GHCR 上的稳定版或开发版镜像，见下方 Docker 一节。
+使用 Docker 时，可以把代码更新到最新后重新构建镜像，也可以直接拉取 Docker Hub 或 GHCR 上的稳定版或开发版镜像，见下方 Docker 一节。
 
 ## 从快照文件恢复数据
 
@@ -245,30 +245,40 @@ server {
 docker build -t lux-music-server:local .
 ```
 
-#### 从 GHCR 拉取镜像
+#### 拉取已发布镜像
 
-镜像只发布到 GitHub Container Registry（`ghcr.io`），不再推送 Docker Hub。Actions 使用仓库自带的 `GITHUB_TOKEN` 推送，不需要额外的 registry secret。
+Release 会同时推送到 **Docker Hub** 与 **GitHub Container Registry（GHCR）**，tag 规则一致。在飞牛 OS 等环境里从 Docker Hub 拉取通常更稳定；GHCR 仍可用作备用源。
+
+**Docker Hub（推荐，飞牛 OS 友好）**
 
 稳定版（合并进 `master` 并完成发布之后）：
 
 ```bash
-docker pull ghcr.io/junedrinleng/lux-music-server:latest
-docker pull ghcr.io/junedrinleng/lux-music-server:0.1.0
-docker pull ghcr.io/junedrinleng/lux-music-server:0.1
+docker pull junedrinleng/lux-music-server:latest
+docker pull junedrinleng/lux-music-server:0.1.0
+docker pull junedrinleng/lux-music-server:0.1
 ```
 
 开发版（合并进 `dev` 并完成发布之后）：
 
 ```bash
+docker pull junedrinleng/lux-music-server:dev
+docker pull junedrinleng/lux-music-server:0.1.0-dev.1
+```
+
+**GHCR（备用）**
+
+```bash
+docker pull ghcr.io/junedrinleng/lux-music-server:latest
 docker pull ghcr.io/junedrinleng/lux-music-server:dev
 docker pull ghcr.io/junedrinleng/lux-music-server:0.1.0-dev.1
 ```
 
 - `:latest` 和 `:X.Y` 只跟随稳定版。同一个 minor 打出 hotfix 后，`:X.Y` 会改指向新的 patch；`:X.Y.Z` 不变。
 - `:dev` 跟随最新开发版。`:X.Y.Z` 和 `:X.Y.Z-dev.N` 发布后不再覆盖。
-- 首次推送后，包的默认可见性可能是 Private。需要别人能拉取时，到该 Package 的设置里改成 Public。
+- GHCR 包首次推送后默认可能是 Private；需要公开拉取时，到该 Package 设置里改成 Public。
 
-若使用 GHCR 镜像启动，请把下面示例中的 `lux-music-server:local` 替换为 `ghcr.io/junedrinleng/lux-music-server:latest`（试开发版则用 `:dev`）。
+若使用已发布镜像启动，请把下面示例中的 `lux-music-server:local` 替换为 `junedrinleng/lux-music-server:latest`（试开发版则用 `:dev`），或改用上面的 GHCR 全名。
 
 #### 使用 docker run 启动
 

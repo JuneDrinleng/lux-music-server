@@ -1,0 +1,68 @@
+name: Sync GHCR to Docker Hub
+
+# 把已在 GHCR 发布的版本镜像复制到 Docker Hub（不重建、不改 tag / Release）。
+# 用于 Hub 推送上线前已发布的版本（如 0.1.0-dev.10）。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（不含 v），如 0.1.0-dev.10 或 0.1.0'
+        required: true
+        type: string
+      prerelease:
+        description: '是否为开发版（与 release 流程一致）'
+        required: true
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+  packages: read
+
+env:
+  IMAGE: ghcr.io/junedrinleng/lux-music-server
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: 登录 GHCR（读取源镜像）
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 登录 Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: 复制镜像 tag
+        env:
+          VERSION: ${{ inputs.version }}
+          PRE: ${{ inputs.prerelease }}
+          HUB_IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/lux-music-server
+        run: |
+          set -euo pipefail
+          pre_arg=false
+          [ "$PRE" = true ] && pre_arg=true
+          if ! docker buildx imagetools inspect "$IMAGE:$VERSION" >/dev/null 2>&1; then
+            echo "GHCR 上不存在 $IMAGE:$VERSION" >&2
+            exit 1
+          fi
+          while IFS= read -r src; do
+            [ -z "$src" ] && continue
+            dst="${src/$IMAGE/$HUB_IMAGE}"
+            echo "同步 $src -> $dst"
+            docker buildx imagetools create "$src" -t "$dst"
+          done < <(node scripts/image-tags.mjs "$IMAGE" "$VERSION" "$pre_arg")

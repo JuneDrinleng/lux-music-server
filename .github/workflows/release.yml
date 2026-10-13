@@ -2,7 +2,8 @@ name: Release
 
 # dev：预发布 vX.Y.Z-dev.N，镜像 :dev 与 :X.Y.Z-dev.N
 # master：正式版（版本 = package.json），镜像 :latest、:X.Y.Z、:X.Y
-# 已有 git tag 就跳过。已有的版本镜像不覆盖。只推 GHCR，只用 GITHUB_TOKEN。
+# 已有 git tag 就跳过。已有的版本镜像不覆盖。
+# 镜像推 GHCR（GITHUB_TOKEN）与 Docker Hub（DOCKERHUB_USERNAME / DOCKERHUB_TOKEN，未配置则只推 GHCR）。
 on:
   push:
     branches: [dev, master]
@@ -169,6 +170,27 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: 准备 Docker Hub 镜像名
+        id: hub
+        env:
+          DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DOCKERHUB_USER:-}" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "未配置 DOCKERHUB_USERNAME，只推 GHCR"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "image=docker.io/${DOCKERHUB_USER}/lux-music-server" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 登录 Docker Hub
+        if: steps.hub.outputs.enabled == 'true'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
       - name: 检查不可变镜像 tag 是否已存在
         id: image
         run: |
@@ -190,15 +212,40 @@ jobs:
       - name: 计算要推送的 tag
         id: tags
         if: steps.image.outputs.exists != 'true'
+        env:
+          HUB_IMAGE: ${{ steps.hub.outputs.image }}
+          HUB_ENABLED: ${{ steps.hub.outputs.enabled }}
         run: |
           set -euo pipefail
+          all="$(node scripts/image-tags.mjs "$IMAGE" "$VERSION" "$PRE")"
+          if [ "$HUB_ENABLED" = true ] && [ -n "${HUB_IMAGE:-}" ]; then
+            hub="$(node scripts/image-tags.mjs "$HUB_IMAGE" "$VERSION" "$PRE")"
+            all=$(printf '%s\n%s\n' "$all" "$hub" | sed '/^$/d')
+          fi
           {
             echo "tags<<EOF"
-            node scripts/image-tags.mjs "$IMAGE" "$VERSION" "$PRE"
+            printf '%s\n' "$all"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
           echo "将推送："
-          node scripts/image-tags.mjs "$IMAGE" "$VERSION" "$PRE"
+          printf '%s\n' "$all"
+
+      - name: 从 GHCR 同步到 Docker Hub（GHCR 已有、Hub 还没有时）
+        if: steps.image.outputs.exists == 'true' && steps.hub.outputs.enabled == 'true'
+        env:
+          HUB_IMAGE: ${{ steps.hub.outputs.image }}
+        run: |
+          set -euo pipefail
+          while IFS= read -r src; do
+            [ -z "$src" ] && continue
+            dst="${src/$IMAGE/$HUB_IMAGE}"
+            if docker buildx imagetools inspect "$dst" >/dev/null 2>&1; then
+              echo "Hub 已有 $dst，跳过"
+            else
+              echo "同步 $src -> $dst"
+              docker buildx imagetools create "$src" -t "$dst"
+            fi
+          done < <(node scripts/image-tags.mjs "$IMAGE" "$VERSION" "$PRE")
 
       - name: 构建并推送镜像
         if: steps.image.outputs.exists != 'true'
