@@ -86,8 +86,19 @@ export const listScriptEntries = (): SourceScriptIndexEntry[] => {
 
 export const findScriptEntry = (id: string) => listScriptEntries().find(s => s.id == id) ?? null
 
+/** Validates LX user-api script shape before persisting (header block + size). */
+export const validateScriptContent = (script: unknown): string => {
+  if (typeof script != 'string') throw new Error('script must be a string')
+  if (!script.length) throw new Error('script content is empty')
+  if (script.length > SOURCE_LIMITS.scriptChars) {
+    throw new Error(`script exceeds size limit (${SOURCE_LIMITS.scriptChars} characters)`)
+  }
+  parseScriptMeta(script)
+  return script
+}
+
 export const upsertScript = (script: string): SourceScriptIndexEntry => {
-  if (script.length > SOURCE_LIMITS.scriptChars) throw new Error('script exceeds size limit')
+  validateScriptContent(script)
   const meta = parseScriptMeta(script)
   const id = scriptIdFromContent(script)
   const hash = sha256Hex(script)

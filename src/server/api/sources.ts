@@ -14,9 +14,18 @@ import {
 import { testScriptAction } from '@/modules/source/resolver'
 import { parseMusicInfoOnline, parseQuality } from '@/modules/source/validate'
 import { requireAdmin } from './authGuard'
-import { getOptionalString, getString, isRecord } from './utils'
+import { decodeScriptBase64, getOptionalString, getRawString, getString, isRecord } from './utils'
 
-const SCRIPT_BODY_LIMIT = SOURCE_LIMITS.scriptChars + 4096
+const SCRIPT_BODY_LIMIT = SOURCE_LIMITS.scriptChars * 2 + 65536
+
+const readScriptPayload = (body: Record<string, unknown>) => {
+  const fromBase64 = decodeScriptBase64(body.scriptBase64)
+  if (fromBase64 != null) {
+    if (getRawString(body.script)) throw new Error('provide either script or scriptBase64, not both')
+    return fromBase64
+  }
+  return getRawString(body.script)
+}
 
 export const registerSourcesAdminApi = async(app: FastifyInstance) => {
   app.get('/api/admin/sources', { preHandler: requireAdmin }, async() => {
@@ -34,7 +43,12 @@ export const registerSourcesAdminApi = async(app: FastifyInstance) => {
 
   app.post('/api/admin/sources', { preHandler: requireAdmin, bodyLimit: SCRIPT_BODY_LIMIT }, async(request, reply) => {
     if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
-    let script = getString(request.body.script)
+    let script: string
+    try {
+      script = readScriptPayload(request.body)
+    } catch (err) {
+      return reply.code(400).send({ message: err instanceof Error ? err.message : 'Invalid script payload' })
+    }
     const url = getOptionalString(request.body.url)
     if (!script && url) {
       try {
@@ -45,12 +59,14 @@ export const registerSourcesAdminApi = async(app: FastifyInstance) => {
         return reply.code(422).send({ message: err instanceof Error ? err.message : 'download failed' })
       }
     }
+    if (!script && !url) return reply.code(400).send({ message: 'script, scriptBase64, or url is required' })
     if (!script) return reply.code(400).send({ message: 'script or url is required' })
     try {
       const entry = await uploadScript(script)
       return { script: entry }
     } catch (err) {
-      return reply.code(422).send({ message: err instanceof Error ? err.message : 'invalid script' })
+      const message = err instanceof Error ? err.message : 'invalid script'
+      return reply.code(422).send({ message, code: 'INVALID_SCRIPT' })
     }
   })
 

@@ -13,8 +13,8 @@ export type ScriptMetaFields = Record<keyof typeof INFO_NAMES, string>
 export const scriptIdFromContent = (script: string) => `src_${crypto.createHash('sha256').update(script).digest('hex').slice(0, 16)}`
 
 export const parseScriptMeta = (script: string): ScriptMetaFields => {
-  const match = /^\/\*[\S|\s]+?\*\//.exec(script)
-  if (!match) throw new Error('script header comment is required')
+  const match = /^\s*\/\*[\S|\s]+?\*\//.exec(script)
+  if (!match) throw new Error('script header comment is required (/** @name … */ at the top)')
 
   const infos: Partial<ScriptMetaFields> = {}
   const rxp = /^\s?\*\s?@(\w+)\s(.+)$/
