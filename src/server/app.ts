@@ -13,6 +13,18 @@ import { registerTogetherApi } from './api/together'
 import { registerSourcesAdminApi } from './api/sources'
 import { registerSourceStreamApi } from './api/sourceStream'
 
+const readServerPackageVersion = () => {
+  try {
+    const pkgPath = path.join(__dirname, '../../package.json')
+    const pkg = JSON.parse(fsSync.readFileSync(pkgPath, 'utf8')) as { version?: unknown }
+    return typeof pkg.version == 'string' ? pkg.version : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
+const SERVER_PACKAGE_VERSION = readServerPackageVersion()
+
 const builtAdminDir = path.resolve(__dirname, '../../admin-ui/dist')
 const webDir = process.env.NODE_ENV == 'production' || !fsSync.existsSync(builtAdminDir)
   ? path.join(__dirname, 'web')
@@ -102,6 +114,8 @@ export const createApp = (): FastifyInstance => {
   app.get('/api/health', async() => ({
     ok: true,
     serverName: lx.config.serverName,
+    version: SERVER_PACKAGE_VERSION,
+    gitCommit: process.env.LUX_BUILD_GIT_COMMIT ?? process.env.GITHUB_SHA ?? null,
   }))
 
   app.get('/admin', async(_request, reply) => {

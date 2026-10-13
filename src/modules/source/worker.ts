@@ -405,13 +405,17 @@ const run = () => {
     port.postMessage({ type: 'error', message: `${label}${message}` } satisfies WorkerToMainMessage)
   }
 
+  const fatalExit = () => {
+    // Let parentPort flush type:error before the exit handler runs.
+    setImmediate(() => process.exit(1))
+  }
   process.on('uncaughtException', err => {
     reportFatal('uncaughtException: ', err)
-    process.exit(1)
+    fatalExit()
   })
   process.on('unhandledRejection', reason => {
     reportFatal('unhandledRejection: ', reason)
-    process.exit(1)
+    fatalExit()
   })
 
   try {
