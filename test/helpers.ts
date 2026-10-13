@@ -21,6 +21,9 @@ export const resetTestState = () => {
   delete process.env.LUX_ADMIN_USER
   delete process.env.LUX_ADMIN_PASSWORD
   delete process.env.LUX_LOG_SYNC_CODES
+  delete process.env.LUX_SOURCE_TIMEOUT_MS
+  delete process.env.LUX_SOURCE_MEMORY_MB
+  delete process.env.LUX_SOURCE_PROXY_STREAM
   if (!loggerReady) {
     initLogger()
     loggerReady = true

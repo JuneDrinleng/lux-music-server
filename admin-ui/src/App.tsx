@@ -9,14 +9,16 @@ import {
   StatusSection,
   UsersSection,
 } from '@/components/pages'
+import { SourcesSection } from '@/components/sources'
 import { Toast } from '@/components/primitives'
 import { adminApi, authApi, getToken, meApi, setToken } from '@/lib/api'
-import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, SectionId, UserView } from '@/types'
+import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, SectionId, SourcesAdminResponse, UserView } from '@/types'
 
 const navAdminOnly: Partial<Record<SectionId, boolean>> = {
   'admin-status': true,
   users: true,
   invites: true,
+  sources: true,
 }
 
 function App() {
@@ -29,6 +31,7 @@ function App() {
   const [adminStatus, setAdminStatus] = useState<AdminStatusResponse | null>(null)
   const [users, setUsers] = useState<UserView[]>([])
   const [invites, setInvites] = useState<Invite[]>([])
+  const [sources, setSources] = useState<SourcesAdminResponse | null>(null)
   const [activeSection, setActiveSection] = useState<SectionId>('overview')
 
   const notify = (text: string) => setMessage(text)
@@ -53,6 +56,7 @@ function App() {
   const loadAdminStatus = async() => setAdminStatus(await adminApi.status())
   const loadUsers = async() => setUsers((await adminApi.users()).users)
   const loadInvites = async() => setInvites((await adminApi.invites()).invites)
+  const loadSources = async() => setSources(await adminApi.sources())
 
   const loadDashboard = async(user: PublicUser) => {
     setMe(user)
@@ -63,6 +67,7 @@ function App() {
       user.role == 'admin' ? loadAdminStatus() : Promise.resolve(),
       user.role == 'admin' ? loadUsers() : Promise.resolve(),
       user.role == 'admin' ? loadInvites() : Promise.resolve(),
+      user.role == 'admin' ? loadSources() : Promise.resolve(),
     ])
   }
 
@@ -101,6 +106,7 @@ function App() {
         setAdminStatus(null)
         setUsers([])
         setInvites([])
+        setSources(null)
         setActiveSection('overview')
         await loadBootstrap()
       }
@@ -155,6 +161,9 @@ function App() {
     }
     if (activeSection == 'invites' && me.role == 'admin') {
       return <InvitesSection invites={invites} refresh={loadInvites} notify={notify} />
+    }
+    if (activeSection == 'sources' && me.role == 'admin') {
+      return <SourcesSection data={sources} refresh={loadSources} notify={notify} />
     }
     return (
       <OverviewSection

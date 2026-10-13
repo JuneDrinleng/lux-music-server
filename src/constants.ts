@@ -11,6 +11,9 @@ export const ENV_PARAMS = [
   'LUX_TOGETHER_MAX_ROOMS',
   'LUX_TOGETHER_GRACE_MS',
   'LX_USER_',
+  'LUX_SOURCE_TIMEOUT_MS',
+  'LUX_SOURCE_MEMORY_MB',
+  'LUX_SOURCE_PROXY_STREAM',
 ] as const
 
 export const SPLIT_CHAR = {

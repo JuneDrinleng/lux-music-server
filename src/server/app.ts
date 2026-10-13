@@ -10,6 +10,8 @@ import { registerAuthApi } from './api/auth'
 import { registerMeApi } from './api/me'
 import { registerSyncApi } from './api/sync'
 import { registerTogetherApi } from './api/together'
+import { registerSourcesAdminApi } from './api/sources'
+import { registerSourceStreamApi } from './api/sourceStream'
 
 const builtAdminDir = path.resolve(__dirname, '../../admin-ui/dist')
 const webDir = process.env.NODE_ENV == 'production' || !fsSync.existsSync(builtAdminDir)
@@ -107,6 +109,8 @@ export const createApp = (): FastifyInstance => {
   void app.register(registerAdminApi)
   void app.register(registerSyncApi)
   void app.register(registerTogetherApi)
+  void app.register(registerSourcesAdminApi)
+  void app.register(registerSourceStreamApi)
 
   app.setNotFoundHandler(async(_request, reply) => {
     sendText(reply, 401, 'Forbidden')

@@ -35,6 +35,10 @@ ENV LOG_PATH=/server/data/logs
 # ENV LX_USER_user2='{ "password": "123.456", "maxSnapshotNum": 10, "list.addMusicLocationType": "top" }'
 # 可选：自定义配置文件路径。
 # ENV CONFIG_PATH='/server/config.js'
+# 可选：Lux 模式服务端音源解析
+# ENV LUX_SOURCE_TIMEOUT_MS=15000
+# ENV LUX_SOURCE_MEMORY_MB=128
+# ENV LUX_SOURCE_PROXY_STREAM=false
 
 COPY --from=builder /source-code/server ./server
 COPY --from=builder /source-code/node_modules ./node_modules

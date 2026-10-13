@@ -97,5 +97,7 @@ declare namespace LX {
     type ClientSyncSourceActions = WarpPromiseRecord<{
       'source:onInfoChanged': (info: Source.Info) => void
     }>
+
+    type ServerSyncHandlerSourceActions<Socket> = WarpSyncHandlerActions<Socket, ServerSyncSourceActions>
   }
 }
