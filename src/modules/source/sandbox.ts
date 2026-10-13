@@ -172,7 +172,9 @@ export class ScriptSandboxHost {
     this.clearHeartbeat()
     this.heartbeatTimer = setInterval(() => {
       if (!this.worker) return
-      if (Date.now() - this.lastPong > 500) void this.handleWorkerStuck()
+      // Sync script bootstrap (e.g. obfuscated LX sources) can block the worker loop until the first await.
+      const stuckMs = this.view.status == 'initializing' ? settings.timeoutMs : 500
+      if (Date.now() - this.lastPong > stuckMs) void this.handleWorkerStuck()
       else this.worker.postMessage({ type: 'ping', t: Date.now() } satisfies MainToWorkerMessage)
     }, 200)
 
@@ -197,9 +199,10 @@ export class ScriptSandboxHost {
     })
 
     worker.on('exit', code => {
-      if (code != 0 && this.view.status != 'disabled') {
-        void this.handleWorkerExit(`worker exited with code ${code}`)
-      }
+      if (code == 0 || this.view.status == 'disabled') return
+      const reason = `worker exited with code ${code}`
+      this.initWait?.reject(new Error(reason))
+      void this.handleWorkerExit(reason)
     })
   }
 
