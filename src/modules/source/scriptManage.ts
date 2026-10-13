@@ -17,6 +17,8 @@ export interface SourceScriptIndexEntry {
   size: number
   createdAt: number
   updatedAt: number
+  /** Last worker/runtime error message (survives restart; cleared when script reaches ready). */
+  lastError?: string | null
 }
 
 export interface SourceScriptView extends Omit<SourceScriptIndexEntry, 'sha256'> {
@@ -134,6 +136,19 @@ export const upsertScript = (script: string): SourceScriptIndexEntry => {
   return entry
 }
 
+export const persistScriptLastError = (id: string, status: SourceScriptView['status'], error: string | null) => {
+  const index = readIndex()
+  let changed = false
+  const scripts = index.scripts.map(s => {
+    if (s.id != id) return s
+    const lastError = status == 'ready' ? null : (error ?? s.lastError ?? null)
+    if (lastError === (s.lastError ?? null)) return s
+    changed = true
+    return { ...s, lastError, updatedAt: Date.now() }
+  })
+  if (changed) saveIndex(scripts)
+}
+
 export const setScriptEnabled = (id: string, enabled: boolean) => {
   const index = readIndex()
   const scripts = index.scripts.map(s => s.id == id ? { ...s, enabled, updatedAt: Date.now() } : s)
@@ -186,7 +201,7 @@ export const normalizeInitedSources = (raw: unknown): Partial<Record<LX.OnlineSo
 export const entryToBaseView = (entry: SourceScriptIndexEntry): SourceScriptView => ({
   ...entry,
   status: entry.enabled ? 'initializing' : 'disabled',
-  error: null,
+  error: entry.lastError ?? null,
   sources: {},
   updateAlert: null,
 })

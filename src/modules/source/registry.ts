@@ -6,6 +6,7 @@ import {
   entryToBaseView,
   findScriptEntry,
   listScriptEntries,
+  persistScriptLastError,
   readScriptContent,
   reorderScripts,
   setScriptEnabled,
@@ -103,7 +104,10 @@ export const enableScript = async(id: string) => {
   await disableScript(id, false)
   setScriptEnabled(id, true)
   const base = entryToBaseView({ ...entry, enabled: true })
-  const host = new ScriptSandboxHost(id, script, base, notifyChanged)
+  const host = new ScriptSandboxHost(id, script, base, () => {
+    persistScriptLastError(id, host.view.status, host.view.error)
+    notifyChanged()
+  })
   hosts.set(id, host)
   try {
     await host.start()

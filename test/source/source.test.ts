@@ -1,11 +1,14 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
+import fs from 'node:fs'
 import {
   clearAllSourceCacheForTests,
+  disableScript,
   enableScript,
   resetSourceRegistryForTests,
   uploadScript,
 } from '../../src/modules/source'
+import { getSourcesDir } from '../../src/modules/source/scriptManage'
 import { getSourceCache, setSourceCache } from '../../src/modules/source/cache'
 import { resolveMusicUrl } from '../../src/modules/source/resolver'
 import { setAllowLoopbackForTests } from '../../src/modules/source/httpClient'
@@ -95,6 +98,16 @@ describe('source module', () => {
     const view = await enableScript(uploaded.id)
     assert.equal(view.status, 'error')
     assert.match(view.error ?? '', /boot failed|script init timeout/)
+  })
+
+  it('persists last worker error on the script index row', async() => {
+    const uploaded = await uploadScript(brokenScript)
+    await enableScript(uploaded.id)
+    await disableScript(uploaded.id)
+    const index = JSON.parse(fs.readFileSync(`${getSourcesDir()}/index.json`, 'utf8')) as { scripts: Array<{ id: string, lastError?: string }> }
+    const row = index.scripts.find(s => s.id == uploaded.id)
+    assert.ok(row?.lastError)
+    assert.match(row!.lastError!, /boot failed/)
   })
 
   it('returns TIMEOUT when script action exceeds per-call timeout', async() => {

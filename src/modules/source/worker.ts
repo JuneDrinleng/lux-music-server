@@ -298,7 +298,7 @@ const run = () => {
     },
     md5([str]) {
       if (typeof str != 'string' || str.length > MAX_UTIL_INPUT) throw new Error('param required a string')
-      return crypto.createHash('md5').update(str).digest('hex')
+      return crypto.createHash('md5').update(encodeURIComponent(str)).digest('hex')
     },
     bufferFrom([input, encoding]) {
       if (typeof input != 'string' || input.length > MAX_UTIL_INPUT * 4) throw new Error('Input too long')
@@ -400,10 +400,24 @@ const run = () => {
     }
   })
 
+  const reportFatal = (label: string, err: unknown) => {
+    const message = errorText(err, true)
+    port.postMessage({ type: 'error', message: `${label}${message}` } satisfies WorkerToMainMessage)
+  }
+
+  process.on('uncaughtException', err => {
+    reportFatal('uncaughtException: ', err)
+    process.exit(1)
+  })
+  process.on('unhandledRejection', reason => {
+    reportFatal('unhandledRejection: ', reason)
+    process.exit(1)
+  })
+
   try {
     new vm.Script(script, { filename: 'user-api.js' }).runInContext(context, { timeout: timeoutMs })
   } catch (err) {
-    port.postMessage({ type: 'error', message: err instanceof Error ? err.message : String(err) } satisfies WorkerToMainMessage)
+    reportFatal('', err)
   }
 }
 
