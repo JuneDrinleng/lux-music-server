@@ -8,6 +8,7 @@ import {
   IconMusicCircle,
   IconOverview,
   IconRefresh,
+  IconScript,
   IconServerRack,
   IconShieldCrown,
   IconUsers,
@@ -23,6 +24,7 @@ const sectionTitles: Record<SectionId, string> = {
   'admin-status': '服务状态',
   users: '用户',
   invites: '邀请码',
+  sources: '音源脚本',
 }
 
 const getSectionTitle = (id: SectionId) => sectionTitles[id] ?? '总览'
@@ -44,6 +46,7 @@ const navItems: NavItem[] = [
   { id: 'admin-status', label: '服务状态', description: '运行状态与地址', tone: 'admin', icon: <IconServerRack />, group: 'admin', adminOnly: true },
   { id: 'users', label: '用户', description: '账号、状态、连接码', tone: 'admin', icon: <IconUsers />, group: 'admin', adminOnly: true },
   { id: 'invites', label: '邀请码', description: '注册入口与使用次数', tone: 'admin', icon: <IconInvite />, group: 'admin', adminOnly: true },
+  { id: 'sources', label: '音源脚本', description: 'Lux 模式服务端解析', tone: 'admin', icon: <IconScript />, group: 'admin', adminOnly: true },
 ]
 
 const getVisibleNavItems = (user: PublicUser) => navItems.filter(item => !item.adminOnly || user.role == 'admin')
@@ -55,7 +58,7 @@ const sectionEyebrow = (section: SectionId) => {
   return '管理员'
 }
 
-const isAdminSection = (section: SectionId) => section == 'admin-status' || section == 'users' || section == 'invites'
+const isAdminSection = (section: SectionId) => section == 'admin-status' || section == 'users' || section == 'invites' || section == 'sources'
 
 export function DashboardShell({
   me,

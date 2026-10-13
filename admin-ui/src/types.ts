@@ -77,4 +77,33 @@ export interface Invite {
   usedBy: Array<{ userId: string, username: string, usedAt: number }>
 }
 
-export type SectionId = 'overview' | 'devices-playlists' | 'account-sync' | 'admin-status' | 'users' | 'invites'
+export type SectionId = 'overview' | 'devices-playlists' | 'account-sync' | 'admin-status' | 'users' | 'invites' | 'sources'
+
+export interface SourceScriptView {
+  id: string
+  name: string
+  description: string
+  version: string
+  author: string
+  homepage: string
+  enabled: boolean
+  priority: number
+  status: 'disabled' | 'initializing' | 'ready' | 'error'
+  error: string | null
+  sources: Partial<Record<string, { actions: string[], qualitys: string[] }>>
+  updateAlert: { log: string, updateUrl?: string } | null
+  size: number
+  createdAt: number
+  updatedAt: number
+}
+
+export interface SourcesAdminResponse {
+  scripts: SourceScriptView[]
+  info: {
+    available: boolean
+    sources: Partial<Record<string, { actions: string[], qualitys: string[] }>>
+    proxyStream: boolean
+    updatedAt: number
+  }
+  settings: { timeoutMs: number, memoryMb: number, proxyStream: boolean }
+}

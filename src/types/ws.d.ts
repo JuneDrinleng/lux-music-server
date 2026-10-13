@@ -12,6 +12,7 @@ declare global {
         list: boolean
         dislike: boolean
         playHistory: boolean
+        source: boolean
       }
 
       onClose: (handler: (err: Error) => (void | Promise<void>)) => () => void

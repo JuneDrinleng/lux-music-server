@@ -38,6 +38,8 @@ declare namespace LX {
       dislike?: false | DislikeConfig
       /** Lux listening history. Absent on legacy LX clients. */
       playHistory?: false | true
+      /** Lux server-side source resolution. Absent on legacy LX clients. */
+      source?: false | true
     }
     type SupportedFeatures = Partial<{ [k in keyof EnabledFeatures]: number }>
   }

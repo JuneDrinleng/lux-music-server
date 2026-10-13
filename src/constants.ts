@@ -8,6 +8,9 @@ export const ENV_PARAMS = [
   'MAX_SNAPSHOT_NUM',
   'LIST_ADD_MUSIC_LOCATION_TYPE',
   'LX_USER_',
+  'LUX_SOURCE_TIMEOUT_MS',
+  'LUX_SOURCE_MEMORY_MB',
+  'LUX_SOURCE_PROXY_STREAM',
 ] as const
 
 export const SPLIT_CHAR = {

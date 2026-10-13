@@ -1,4 +1,4 @@
-import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, Role, UserStatus, UserView } from '@/types'
+import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, Role, SourcesAdminResponse, UserStatus, UserView } from '@/types'
 
 export const tokenKey = 'lux_sync_admin_token'
 
@@ -55,4 +55,9 @@ export const adminApi = {
   createInvite: (body: { code?: string, role: Role, maxUses: number }) => request<{ invite: Invite, code: string }>('/api/admin/invites', { method: 'POST', body: jsonBody(body) }),
   updateInvite: (id: string, body: { disabled?: boolean }) => request<{ invite: Invite }>(`/api/admin/invites/${id}`, { method: 'PATCH', body: jsonBody(body) }),
   deleteInvite: (id: string) => request<{ ok: boolean }>(`/api/admin/invites/${id}`, { method: 'DELETE' }),
+  sources: () => request<SourcesAdminResponse>('/api/admin/sources'),
+  uploadSource: (body: { script?: string, url?: string }) => request<{ script: SourcesAdminResponse['scripts'][number] }>('/api/admin/sources', { method: 'POST', body: jsonBody(body) }),
+  enableSource: (id: string) => request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/enable`, { method: 'POST' }),
+  disableSource: (id: string) => request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/disable`, { method: 'POST' }),
+  deleteSource: (id: string) => request<{ ok: boolean }>(`/api/admin/sources/${id}`, { method: 'DELETE' }),
 }
