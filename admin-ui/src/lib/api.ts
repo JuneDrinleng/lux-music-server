@@ -12,6 +12,17 @@ export const setToken = (value: string) => {
   else localStorage.removeItem(tokenKey)
 }
 
+const parseResponseJson = (text: string): Record<string, unknown> => {
+  if (!text) return {}
+  try {
+    const data = JSON.parse(text) as unknown
+    return typeof data == 'object' && data != null ? data as Record<string, unknown> : {}
+  } catch {
+    const snippet = text.length > 120 ? `${text.slice(0, 120)}…` : text
+    throw new Error(`服务器返回了非 JSON 响应：${snippet}`)
+  }
+}
+
 const request = async<T>(path: string, options: RequestInit = {}): Promise<T> => {
   const headers = new Headers(options.headers)
   if (options.body && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json')
@@ -19,8 +30,15 @@ const request = async<T>(path: string, options: RequestInit = {}): Promise<T> =>
 
   const res = await fetch(path, { ...options, headers })
   const text = await res.text()
-  const data = text ? JSON.parse(text) : {}
-  if (!res.ok) throw new Error(data.message || res.statusText)
+  const data = parseResponseJson(text)
+  if (!res.ok) {
+    const message = typeof data.message == 'string' ? data.message : res.statusText
+    if (res.status == 413) throw new Error(message || '请求体过大，请改用「选择文件」上传或减少脚本体积')
+    if (res.status == 404 && path.startsWith('/api/admin/sources')) {
+      throw new Error('当前服务端未提供音源脚本 API，请升级到包含 source 模块的 dev 构建')
+    }
+    throw new Error(message || `请求失败 (${res.status})`)
+  }
   return data as T
 }
 
@@ -56,7 +74,7 @@ export const adminApi = {
   updateInvite: (id: string, body: { disabled?: boolean }) => request<{ invite: Invite }>(`/api/admin/invites/${id}`, { method: 'PATCH', body: jsonBody(body) }),
   deleteInvite: (id: string) => request<{ ok: boolean }>(`/api/admin/invites/${id}`, { method: 'DELETE' }),
   sources: () => request<SourcesAdminResponse>('/api/admin/sources'),
-  uploadSource: (body: { script?: string, url?: string }) => request<{ script: SourcesAdminResponse['scripts'][number] }>('/api/admin/sources', { method: 'POST', body: jsonBody(body) }),
+  uploadSource: (body: { script?: string, scriptBase64?: string, url?: string }) => request<{ script: SourcesAdminResponse['scripts'][number] }>('/api/admin/sources', { method: 'POST', body: jsonBody(body) }),
   enableSource: (id: string) => request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/enable`, { method: 'POST' }),
   disableSource: (id: string) => request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/disable`, { method: 'POST' }),
   deleteSource: (id: string) => request<{ ok: boolean }>(`/api/admin/sources/${id}`, { method: 'DELETE' }),

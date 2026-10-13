@@ -1,9 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { adminApi } from '@/lib/api'
 import { ChartCard, MetricTiles } from '@/components/charts'
 import { DotPill, Field, Pill } from '@/components/primitives'
 import { IconCircle, IconRefresh, IconScript, IconTrash } from '@/lib/icons'
 import type { SourceScriptView, SourcesAdminResponse } from '@/types'
+
+type UploadMode = 'paste' | 'file' | 'url'
 
 const statusLabel = (script: SourceScriptView) => {
   switch (script.status) {
@@ -14,22 +16,67 @@ const statusLabel = (script: SourceScriptView) => {
   }
 }
 
+const readFileAsText = (file: File) => new Promise<string>((resolve, reject) => {
+  const reader = new FileReader()
+  reader.onload = () => resolve(typeof reader.result == 'string' ? reader.result : '')
+  reader.onerror = () => reject(new Error('无法读取文件'))
+  reader.readAsText(file, 'utf-8')
+})
+
 function UploadPanel({ refresh, notify }: { refresh: () => Promise<void>, notify: (m: string) => void }) {
-  const [urlMode, setUrlMode] = useState(false)
+  const [mode, setMode] = useState<UploadMode>('paste')
+  const [enableAfter, setEnableAfter] = useState(false)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [pickedFile, setPickedFile] = useState<File | null>(null)
+
   const submit = async(event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    setUploadError(null)
+    setBusy(true)
     const form = event.currentTarget
-    const script = (form.elements.namedItem('script') as HTMLTextAreaElement).value.trim()
-    const url = (form.elements.namedItem('url') as HTMLInputElement).value.trim()
     try {
-      await adminApi.uploadSource(urlMode ? { url } : { script })
+      let script: string | undefined
+      let url: string | undefined
+      if (mode == 'url') {
+        url = (form.elements.namedItem('url') as HTMLInputElement).value.trim()
+      } else if (mode == 'file') {
+        const file = pickedFile ?? fileInputRef.current?.files?.[0]
+        if (!file) throw new Error('请选择 .js 脚本文件')
+        if (!file.name.toLowerCase().endsWith('.js')) throw new Error('仅支持 .js 文件')
+        script = await readFileAsText(file)
+      } else {
+        script = (form.elements.namedItem('script') as HTMLTextAreaElement).value
+        if (!script.trim()) throw new Error('请粘贴脚本内容')
+      }
+
+      const { script: entry } = await adminApi.uploadSource(url ? { url } : { script })
       form.reset()
-      notify('脚本已上传')
+      setPickedFile(null)
+      if (fileInputRef.current) fileInputRef.current.value = ''
+
+      if (enableAfter) {
+        const enabled = await adminApi.enableSource(entry.id)
+        if (enabled.script.status == 'error' && enabled.script.error) {
+          setUploadError(`脚本已保存，但启用失败：${enabled.script.error}`)
+          notify('脚本已上传，启用失败')
+        } else {
+          notify(enabled.script.status == 'ready' ? '脚本已上传并启用' : '脚本已上传，正在初始化…')
+        }
+      } else {
+        notify('脚本已上传（默认禁用，可在列表中启用）')
+      }
       await refresh()
     } catch (err) {
-      notify(err instanceof Error ? err.message : '上传失败')
+      const message = err instanceof Error ? err.message : '上传失败'
+      setUploadError(message)
+      notify(message)
+    } finally {
+      setBusy(false)
     }
   }
+
   return (
     <div className="lux-card lux-create-panel">
       <form className="lux-create-bar inv" onSubmit={submit}>
@@ -37,22 +84,56 @@ function UploadPanel({ refresh, notify }: { refresh: () => Promise<void>, notify
           <IconCircle tone="admin"><IconScript /></IconCircle>
           <div>
             <h3>上传音源脚本</h3>
-            <p>LX 自定义源格式，默认上传后禁用</p>
+            <p>LX 自定义源格式（/** @name … */ 头注释必填），默认上传后禁用</p>
           </div>
         </div>
         <div className="lux-seg" role="group" aria-label="上传方式">
-          <button type="button" className={!urlMode ? 'on' : undefined} onClick={() => setUrlMode(false)}>粘贴脚本</button>
-          <button type="button" className={urlMode ? 'on' : undefined} onClick={() => setUrlMode(true)}>URL 下载</button>
+          <button type="button" className={mode == 'paste' ? 'on' : undefined} onClick={() => setMode('paste')}>粘贴脚本</button>
+          <button type="button" className={mode == 'file' ? 'on' : undefined} onClick={() => setMode('file')}>选择文件</button>
+          <button type="button" className={mode == 'url' ? 'on' : undefined} onClick={() => setMode('url')}>URL 下载</button>
         </div>
-        {urlMode
+        {mode == 'url'
           ? <Field label="脚本 URL" name="url" placeholder="https://..." required />
-          : (
-            <div className="lux-field">
-              <label htmlFor="script">脚本内容</label>
-              <textarea id="script" name="script" required rows={6} style={{ width: '100%', borderRadius: 12, padding: 12, border: '1px solid var(--line)', fontFamily: 'ui-monospace, monospace', fontSize: 12 }} placeholder="/** @name ... */" />
-            </div>
-          )}
-        <button type="submit" className="lux-btn primary" style={{ height: 40, padding: '0 18px' }}>上传</button>
+          : mode == 'file'
+            ? (
+              <div className="lux-field">
+                <label htmlFor="script-file">脚本文件 (.js)</label>
+                <input
+                  id="script-file"
+                  ref={fileInputRef}
+                  name="scriptFile"
+                  type="file"
+                  accept=".js,text/javascript,application/javascript"
+                  required
+                  onChange={e => setPickedFile(e.target.files?.[0] ?? null)}
+                  style={{ width: '100%' }}
+                />
+                {pickedFile ? <p className="lux-note" style={{ marginTop: 6 }}>{pickedFile.name} · {(pickedFile.size / 1024).toFixed(1)} KB</p> : null}
+              </div>
+            )
+            : (
+              <div className="lux-field">
+                <label htmlFor="script">脚本内容</label>
+                <textarea
+                  id="script"
+                  name="script"
+                  required
+                  rows={8}
+                  style={{ width: '100%', borderRadius: 12, padding: 12, border: '1px solid var(--line)', fontFamily: 'ui-monospace, monospace', fontSize: 12 }}
+                  placeholder={'/**\n * @name 我的源\n * @version 1\n */'}
+                />
+              </div>
+            )}
+        <label className="lux-note" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" checked={enableAfter} onChange={e => setEnableAfter(e.target.checked)} />
+          上传后立即启用（若沙箱初始化失败，错误会显示在下方与脚本列表中）
+        </label>
+        {uploadError ? (
+          <p className="lux-note" role="alert" style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap' }}>{uploadError}</p>
+        ) : null}
+        <button type="submit" className="lux-btn primary" style={{ height: 40, padding: '0 18px' }} disabled={busy}>
+          {busy ? '上传中…' : '上传'}
+        </button>
       </form>
     </div>
   )
@@ -65,8 +146,14 @@ function ScriptRow({
   const toggle = async() => {
     try {
       if (script.enabled) await adminApi.disableSource(script.id)
-      else await adminApi.enableSource(script.id)
-      notify(script.enabled ? '已禁用' : '已启用')
+      else {
+        const res = await adminApi.enableSource(script.id)
+        if (res.script.status == 'error' && res.script.error) {
+          notify(`启用失败：${res.script.error}`)
+        } else {
+          notify(script.enabled ? '已禁用' : '已启用')
+        }
+      }
       await refresh()
     } catch (err) {
       notify(err instanceof Error ? err.message : '操作失败')

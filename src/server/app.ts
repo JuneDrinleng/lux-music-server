@@ -73,6 +73,19 @@ export const createApp = (): FastifyInstance => {
     bodyLimit: API_BODY_LIMIT,
   })
 
+  app.setErrorHandler((error, request, reply) => {
+    const statusCode = error.statusCode ?? 500
+    const message = error.message || 'Internal Server Error'
+    if (request.url.startsWith('/api/')) {
+      void reply.code(statusCode).send({
+        message,
+        code: 'code' in error && typeof error.code == 'string' ? error.code : undefined,
+      })
+      return
+    }
+    void reply.code(statusCode).type('text/plain; charset=utf-8').send(message)
+  })
+
   app.get('/hello', async(_request, reply) => {
     sendText(reply, 200, SYNC_CODE.helloMsg)
   })
@@ -112,7 +125,10 @@ export const createApp = (): FastifyInstance => {
   void app.register(registerSourcesAdminApi)
   void app.register(registerSourceStreamApi)
 
-  app.setNotFoundHandler(async(_request, reply) => {
+  app.setNotFoundHandler(async(request, reply) => {
+    if (request.url.startsWith('/api/')) {
+      return reply.code(404).send({ message: 'API route not found' })
+    }
     sendText(reply, 401, 'Forbidden')
   })
 
