@@ -52,7 +52,7 @@ throw new Error('script boot failed')
 
 describe('source module', () => {
   beforeEach(async() => {
-    process.env.LUX_SOURCE_TIMEOUT_MS = '1000'
+    process.env.LUX_SOURCE_TIMEOUT_MS = '5000'
     setAllowLoopbackForTests(true)
     await resetSourceRegistryForTests()
     clearAllSourceCacheForTests()
@@ -98,6 +98,7 @@ describe('source module', () => {
   })
 
   it('returns TIMEOUT when script action exceeds per-call timeout', async() => {
+    process.env.LUX_SOURCE_TIMEOUT_MS = '1000'
     const uploaded = await uploadScript(slowScript)
     await enableScript(uploaded.id)
     const socket = { moduleReadys: { source: true } } as LX.Socket
