@@ -2,6 +2,7 @@
 // import { getUserSpace } from '@/user'
 import { FeaturesList } from '@/constants'
 import { modules, playHistoryModule } from '@/modules'
+import { togetherModule } from '@/modules'
 
 
 const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
@@ -20,6 +21,11 @@ const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
       beforeFeature.playHistory = !!feature.playHistory
       socket.moduleReadys.playHistory = false
       if (feature.playHistory) await playHistoryModule.sync(socket).catch(_ => _)
+    }
+    if (feature.together != null) {
+      beforeFeature.together = !!feature.together
+      socket.moduleReadys.together = false
+      if (feature.together) await togetherModule.sync(socket).catch(_ => _)
     }
   },
 }

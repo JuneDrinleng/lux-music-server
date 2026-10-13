@@ -140,11 +140,13 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
       list: false,
       dislike: false,
       playHistory: false,
+      together: false,
     }
     socket.feature = {
       list: false,
       dislike: false,
       playHistory: false,
+      together: false,
     }
     socket.on('pong', () => {
       socket.isAlive = true

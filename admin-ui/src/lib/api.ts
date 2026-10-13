@@ -1,3 +1,4 @@
+import type { TogetherRoomsResponse } from '@/types'
 import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, Role, UserStatus, UserView } from '@/types'
 
 export const tokenKey = 'lux_sync_admin_token'
@@ -55,4 +56,8 @@ export const adminApi = {
   createInvite: (body: { code?: string, role: Role, maxUses: number }) => request<{ invite: Invite, code: string }>('/api/admin/invites', { method: 'POST', body: jsonBody(body) }),
   updateInvite: (id: string, body: { disabled?: boolean }) => request<{ invite: Invite }>(`/api/admin/invites/${id}`, { method: 'PATCH', body: jsonBody(body) }),
   deleteInvite: (id: string) => request<{ ok: boolean }>(`/api/admin/invites/${id}`, { method: 'DELETE' }),
+}
+
+export const togetherApi = {
+  rooms: () => request<TogetherRoomsResponse>('/api/admin/together/rooms'),
 }
