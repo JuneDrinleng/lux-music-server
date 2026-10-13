@@ -1,17 +1,11 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
-import fs from 'node:fs'
 import {
   enableScript,
   resetSourceRegistryForTests,
   uploadScript,
 } from '../../src/modules/source'
 import { setAllowLoopbackForTests } from '../../src/modules/source/httpClient'
-
-const yehuaScript = fs.readFileSync(
-  '/cursor/stores/bc-d7c47bf3-18f3-40be-b125-396b40fc4fbb/internal/source-scripts/yehua-v1.js',
-  'utf8',
-)
 
 /** Same init pattern as 野花: remote registry then send inited or throw in finally */
 const obfuscatedStyleInit = `/**

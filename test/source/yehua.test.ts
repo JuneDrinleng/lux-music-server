@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test'
 import assert from 'node:assert/strict'
 import fs from 'node:fs'
+import path from 'node:path'
 import {
   enableScript,
   resetSourceRegistryForTests,
@@ -8,10 +9,7 @@ import {
 } from '../../src/modules/source'
 import { setAllowLoopbackForTests } from '../../src/modules/source/httpClient'
 
-const yehuaScript = fs.readFileSync(
-  '/cursor/stores/bc-d7c47bf3-18f3-40be-b125-396b40fc4fbb/internal/source-scripts/yehua-v1.js',
-  'utf8',
-)
+const yehuaScript = fs.readFileSync(path.join(__dirname, '../fixtures/yehua-v1.js'), 'utf8')
 
 describe('yehua script sandbox', () => {
   beforeEach(async() => {

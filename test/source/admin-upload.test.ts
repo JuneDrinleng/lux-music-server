@@ -7,7 +7,7 @@ import { SOURCE_LIMITS } from '../../src/modules/source/protocol'
 import { parseJson, resetTestState } from '../helpers'
 import type { FastifyInstance } from 'fastify'
 
-const YEHUA = '/cursor/stores/bc-d7c47bf3-18f3-40be-b125-396b40fc4fbb/internal/source-scripts/yehua-v1.js'
+const YEHUA = path.join(__dirname, '../fixtures/yehua-v1.js')
 
 const HEADER = `/**
  * @name test-src
@@ -55,7 +55,6 @@ describe('admin sources upload', () => {
   })
 
   it('accepts yehua fixture with emoji in @name', async() => {
-    if (!fs.existsSync(YEHUA)) return
     const token = await adminToken(app)
     const script = fs.readFileSync(YEHUA, 'utf8')
     const res = await app.inject({
