@@ -2,7 +2,7 @@
 import { getRoomManager } from '../roomManage'
 
 const requireEnabled = (socket: LX.Socket) => {
-  if (!socket.moduleReadys?.together) throw new Error('together is not enabled')
+  if (!socket?.moduleReadys?.together) throw new Error('together is not enabled')
 }
 
 type TogetherHandler = WarpSyncHandlerActions<LX.Socket, LX.Sync.ServerSyncTogetherActions>
