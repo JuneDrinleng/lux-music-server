@@ -14,6 +14,10 @@ on:
         required: true
         type: boolean
         default: true
+  push:
+    branches: [dev]
+    paths:
+      - '.github/triggers/sync-dockerhub/**'
 
 permissions:
   contents: read
@@ -47,10 +51,36 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
+      - name: 解析同步参数
+        id: params
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_PRE: ${{ inputs.prerelease }}
+        run: |
+          set -euo pipefail
+          if [ -n "${INPUT_VERSION:-}" ]; then
+            echo "version=$INPUT_VERSION" >> "$GITHUB_OUTPUT"
+            echo "pre=$INPUT_PRE" >> "$GITHUB_OUTPUT"
+          else
+            trigger="$(find .github/triggers/sync-dockerhub -type f ! -name '.gitkeep' | head -1)"
+            if [ -z "$trigger" ]; then
+              echo "缺少 workflow_dispatch 参数或 push trigger 文件" >&2
+              exit 1
+            fi
+            version="$(basename "$trigger")"
+            pre=true
+            if grep -q '^prerelease=false' "$trigger" 2>/dev/null; then
+              pre=false
+            fi
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "pre=$pre" >> "$GITHUB_OUTPUT"
+            echo "来自 trigger：$trigger (prerelease=$pre)"
+          fi
+
       - name: 复制镜像 tag
         env:
-          VERSION: ${{ inputs.version }}
-          PRE: ${{ inputs.prerelease }}
+          VERSION: ${{ steps.params.outputs.version }}
+          PRE: ${{ steps.params.outputs.pre }}
           HUB_IMAGE: docker.io/${{ secrets.DOCKERHUB_USERNAME }}/lux-music-server
         run: |
           set -euo pipefail
