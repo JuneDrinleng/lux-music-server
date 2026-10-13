@@ -14,5 +14,5 @@ function run(args) {
 
 run(['--test', 'scripts/next-version.test.mjs', 'scripts/image-tags.test.mjs'])
 if (fs.existsSync(path.join(root, 'test/register.cjs'))) {
-  run(['--test', '--require', './test/register.cjs', 'test/**/*.test.ts'])
+  run(['--test', '--test-force-exit', '--require', './test/register.cjs', 'test/**/*.test.ts'])
 }

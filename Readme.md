@@ -210,6 +210,9 @@ server {
 | `LUX_BOOTSTRAP_TOKEN` | 首次创建管理员的保护 token。未配置时，`POST /api/auth/bootstrap` **仅允许**来自本机回环地址（`127.0.0.1` / `::1`）的请求；公网 / Docker 端口映射访问会被拒绝。配置后，远程请求需在请求头携带 `x-lux-bootstrap-token: <token>`。也可用 `LUX_ADMIN_USER` + `LUX_ADMIN_PASSWORD` 在启动时直接创建管理员，避免走 bootstrap。 |
 | `LUX_ADMIN_USER` / `LUX_ADMIN_PASSWORD` | 可选。若同时设置且该用户尚不存在，启动时自动创建管理员账号（适合 Docker 首次部署）。 |
 | `LUX_LOG_SYNC_CODES` | 设为 `1` 或 `true` 时，启动日志明文打印同步连接码；默认脱敏。`DEBUG` 非空时同样打印明文。 |
+| `LUX_SOURCE_TIMEOUT_MS` | Lux 模式下单次音源脚本 action 与初始化超时（毫秒），默认 `15000`，合法范围 1000–60000。 |
+| `LUX_SOURCE_MEMORY_MB` | 每个已启用脚本的 worker `maxOldGenerationSizeMb`，默认 `128`，合法范围 32–1024。 |
+| `LUX_SOURCE_PROXY_STREAM` | 设为 `true` 或 `1` 时，`resolveMusicUrl` 返回 `/api/source/stream/…` 代理路径（默认关）。 |
 | `LX_USER_` | 以 `LX_USER_` 开头的环境变量将被识别为用户配置，可用的配置语法为：<br />1. `LX_USER_user1='xxx'`；<br />2. `LX_USER_user1='{"password":"xxx"}'`。<br />其中 `LX_USER_` 会被去掉，剩下的 `user1` 为用户名，`xxx` 为用户密码（**连接码**）。<br />配置方式 1 为简写模式，只指定用户名及密码（链接码），其他配置使用公共配置。<br />配置方式 2 为 JSON 字符串格式，配置内容参考 `config.js`，由于该方式在变量名指定了用户名，所以 JSON 里的用户名是可选的。 |
 
 关于 `config.users`（连接码）与 `accounts.json`（托管账号）的关系，见 [docs/user-models.md](docs/user-models.md)。

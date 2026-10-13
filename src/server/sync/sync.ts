@@ -1,5 +1,5 @@
 import { FeaturesList } from '@/constants'
-import { featureVersion, modules, playHistoryModule } from '@/modules'
+import { featureVersion, modules, playHistoryModule, sourceModule } from '@/modules'
 
 
 export const sync = async(socket: LX.Socket) => {
@@ -21,6 +21,10 @@ export const sync = async(socket: LX.Socket) => {
   if (enabledFeatures.playHistory) {
     socket.feature.playHistory = true
     await playHistoryModule.sync(socket).catch(_ => _)
+  }
+  if (enabledFeatures.source) {
+    socket.feature.source = true
+    await sourceModule.sync(socket).catch(_ => _)
   }
   if (disconnected) throw new Error('disconnected')
   await socket.remote.finished()
