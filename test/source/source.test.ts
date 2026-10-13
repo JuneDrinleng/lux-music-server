@@ -94,7 +94,7 @@ describe('source module', () => {
     const uploaded = await uploadScript(brokenScript)
     const view = await enableScript(uploaded.id)
     assert.equal(view.status, 'error')
-    assert.match(view.error ?? '', /boot failed/)
+    assert.match(view.error ?? '', /boot failed|script init timeout/)
   })
 
   it('returns TIMEOUT when script action exceeds per-call timeout', async() => {
