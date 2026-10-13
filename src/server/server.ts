@@ -174,7 +174,8 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
         })
       },
       onCallBeforeParams(rawArgs) {
-        return [socket, ...rawArgs]
+        const args = Array.isArray(rawArgs) ? rawArgs : []
+        return [socket, ...args]
       },
       onError(error, path, groupName) {
         const name = groupName ?? ''
