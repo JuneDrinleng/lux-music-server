@@ -1,6 +1,6 @@
 import type { FastifyInstance } from 'fastify'
 import { getAccountStore } from '@/account/store'
-import { getUserSpace } from '@/user'
+import { getUserName, getUserSpace } from '@/user'
 import { removeDevice } from '../server'
 import { getServerStatus } from '../status'
 import { getRequiredAuthUser, requireAdmin, type AuthRequest } from './authGuard'
@@ -24,12 +24,19 @@ const getGender = (value: unknown): 'male' | 'female' | 'unknown' | undefined =>
 }
 
 export const registerAdminApi = async(app: FastifyInstance) => {
-  app.get('/api/admin/status', { preHandler: requireAdmin }, async() => ({
-    status: getServerStatus(),
-    users: getAccountStore().getUserViews().length,
-    managedUsers: getAccountStore().getManagedUsers().length,
-    invites: getAccountStore().getInvites().length,
-  }))
+  app.get('/api/admin/status', { preHandler: requireAdmin }, async() => {
+    const status = getServerStatus()
+    const devices = (status.devices ?? []).map(device => ({
+      ...device,
+      userName: device.clientId ? getUserName(device.clientId) ?? undefined : undefined,
+    }))
+    return {
+      status: { ...status, devices },
+      users: getAccountStore().getUserViews().length,
+      managedUsers: getAccountStore().getManagedUsers().length,
+      invites: getAccountStore().getInvites().length,
+    }
+  })
 
   app.get('/api/admin/users', { preHandler: requireAdmin }, async() => ({
     users: getAccountStore().getUserViews(),

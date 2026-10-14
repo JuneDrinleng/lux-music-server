@@ -295,7 +295,7 @@ function DevicesCard({ devices, refresh, notify }: { devices: Device[], refresh:
       <div className="lux-card-h">
         <div>
           <h3>我的设备</h3>
-          <p>已授权连接到此同步账号的客户端 · {devices.length} 台</p>
+          <p>已授权连接到<strong>当前登录账号</strong>的客户端 · {devices.length} 台（其他 Lux 用户请在「用户」里点「查看设备」）</p>
         </div>
         <button type="button" className="lux-btn sm ghost" onClick={() => void refresh()}><IconRefresh />刷新</button>
       </div>
@@ -671,7 +671,7 @@ export function StatusSection({
                   <IconCircle tone="status">{device.isMobile ? <IconPhone /> : <IconLaptop />}</IconCircle>
                   <div className="t">
                     <b>{device.deviceName || 'Unknown'}</b>
-                    <span>{device.isMobile ? '移动端' : '桌面端'} · {formatDate(device.lastConnectDate)}</span>
+                    <span>{device.userName ? `@${device.userName} · ` : ''}{device.isMobile ? '移动端' : '桌面端'} · {formatDate(device.lastConnectDate)}</span>
                   </div>
                   <Pill tone="ok">在线</Pill>
                 </div>
@@ -745,6 +745,22 @@ function CreateUserForm({ refresh, notify }: { refresh: () => Promise<void>, not
 
 function UsersCard({ users, refresh, notify }: { users: UserView[], refresh: () => Promise<void>, notify: (message: string) => void }) {
   const [codes, setCodes] = useState<Record<string, string>>({})
+  const [devicesByUser, setDevicesByUser] = useState<Record<string, Device[]>>({})
+  const [devicesOpen, setDevicesOpen] = useState<Record<string, boolean>>({})
+
+  const toggleDevices = async(user: UserView) => {
+    if (devicesOpen[user.id]) {
+      setDevicesOpen(current => ({ ...current, [user.id]: false }))
+      return
+    }
+    try {
+      const data = await adminApi.userDevices(user.id)
+      setDevicesByUser(current => ({ ...current, [user.id]: data.devices }))
+      setDevicesOpen(current => ({ ...current, [user.id]: true }))
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '获取设备失败')
+    }
+  }
 
   const toggleUser = async(user: UserView) => {
     try {
@@ -822,6 +838,9 @@ function UsersCard({ users, refresh, notify }: { users: UserView[], refresh: () 
                 <button type="button" className="lux-btn sm ghost" onClick={() => void resetCode(user)}>
                   <IconSyncReset />重置连接码
                 </button>
+                <button type="button" className="lux-btn sm ghost" onClick={() => void toggleDevices(user)}>
+                  <IconDevices />{devicesOpen[user.id] ? '隐藏设备' : '查看设备'}
+                </button>
               </div>
             ) : (
               <div className="lux-note" style={{ textAlign: 'right' }}>配置文件/环境变量用户<br />不可在此显示或重置连接码</div>
@@ -829,6 +848,18 @@ function UsersCard({ users, refresh, notify }: { users: UserView[], refresh: () 
             {codes[user.id] ? (
               <div style={{ flexBasis: 'calc(100% - 52px)', marginLeft: 52 }}>
                 <Cassette value={codes[user.id]!} hint={`@${user.username} 的连接码`} />
+              </div>
+            ) : null}
+            {devicesOpen[user.id] ? (
+              <div style={{ flexBasis: '100%', marginLeft: 52, paddingBottom: 8 }}>
+                {!devicesByUser[user.id]?.length
+                  ? <p className="lux-note">暂无已授权设备</p>
+                  : devicesByUser[user.id]!.map(device => (
+                    <div key={device.clientId} className="lux-note" style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 6 }}>
+                      <IconCircle tone="mine" size="xs">{device.isMobile ? <IconPhone /> : <IconLaptop />}</IconCircle>
+                      <span><b>{device.deviceName || 'Unknown'}</b> · {formatDate(device.lastConnectDate)}</span>
+                    </div>
+                  ))}
               </div>
             ) : null}
           </div>

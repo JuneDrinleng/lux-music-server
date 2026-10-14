@@ -150,6 +150,12 @@ export class ScriptSandboxHost {
     this.heartbeatTimer = null
   }
 
+  private heartbeatStuckMs(settings: ReturnType<typeof getSourceSettings>) {
+    if (this.view.status == 'initializing') return settings.timeoutMs
+    if (this.pendingHttp.size > 0) return settings.timeoutMs
+    return 500
+  }
+
   private workerFailureDetail(code: number | null, fallback: string) {
     return this.lastWorkerFatalError ?? fallback ?? `worker exited with code ${code ?? 1}`
   }
@@ -179,8 +185,7 @@ export class ScriptSandboxHost {
     this.clearHeartbeat()
     this.heartbeatTimer = setInterval(() => {
       if (!this.worker) return
-      // Sync script bootstrap (e.g. obfuscated LX sources) can block the worker loop until the first await.
-      const stuckMs = this.view.status == 'initializing' ? settings.timeoutMs : 500
+      const stuckMs = this.heartbeatStuckMs(settings)
       if (Date.now() - this.lastPong > stuckMs) void this.handleWorkerStuck()
       else this.worker.postMessage({ type: 'ping', t: Date.now() } satisfies MainToWorkerMessage)
     }, 200)
@@ -193,6 +198,7 @@ export class ScriptSandboxHost {
       if (msg.type == 'error') {
         const message = msg.message ?? 'worker error'
         this.lastWorkerFatalError = message
+        this.allowAutoRestart = false
         this.setView({ status: 'error', error: message })
         this.initWait?.reject(new Error(message))
         return
@@ -211,6 +217,7 @@ export class ScriptSandboxHost {
       const fallback = `worker exited with code ${code}`
       const detail = this.workerFailureDetail(code, fallback)
       if (this.initWait) {
+        this.allowAutoRestart = false
         this.setView({ status: 'error', error: detail })
         this.initWait.reject(new Error(detail))
         return
@@ -331,6 +338,7 @@ export class ScriptSandboxHost {
         response,
       } satisfies MainToWorkerMessage)
     }
+    this.pendingHttp.set(data.id, { abort: () => undefined })
     try {
       const result = await safeRequest(data.url, {
         method: built.method,
