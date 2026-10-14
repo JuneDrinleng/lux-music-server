@@ -1,7 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { getAccountStore } from '@/account/store'
-import { getUserName, getUserSpace } from '@/user'
-import { removeDevice } from '../server'
+import { getRoomManager } from '@/modules/together'
+import { releaseUserSpace, getUserName, getUserSpace } from '@/user'
+import { disconnectUserSessions, removeDevice } from '../server'
 import { getServerStatus } from '../status'
 import { getRequiredAuthUser, requireAdmin, type AuthRequest } from './authGuard'
 import { getNumber, getOptionalString, getString, isRecord } from './utils'
@@ -54,6 +55,26 @@ export const registerAdminApi = async(app: FastifyInstance) => {
       return { user }
     } catch (err: any) {
       return reply.code(400).send({ message: err.message })
+    }
+  })
+
+  app.delete('/api/admin/users/:id', { preHandler: requireAdmin }, async(request: AuthRequest, reply) => {
+    const id = (request.params as { id?: string }).id
+    if (!id) return reply.code(400).send({ message: 'Missing user id' })
+    const actor = getRequiredAuthUser(request)
+    if (actor.id == id) return reply.code(400).send({ message: 'Cannot delete yourself' })
+    const target = getAccountStore().findManagedUserById(id)
+    if (!target) return reply.code(404).send({ message: 'User not found' })
+    try {
+      disconnectUserSessions(target.username)
+      getRoomManager().evictUser(id)
+      const { username } = getAccountStore().deleteManagedUser(id)
+      releaseUserSpace(username, true)
+      return { ok: true }
+    } catch (err: any) {
+      const message = err?.message ?? 'Delete failed'
+      if (message == 'Cannot delete the last admin') return reply.code(400).send({ message })
+      return reply.code(404).send({ message })
     }
   })
 

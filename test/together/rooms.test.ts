@@ -37,6 +37,17 @@ describe('together rooms: lifecycle', () => {
     assert.deepEqual(manager.getStats(), { activeRooms: 1, members: 1, onlineMembers: 1 })
   })
 
+  it('evicts all memberships when a Lux account is deleted', () => {
+    const { manager, host, room } = setupRoom()
+    const bobPhone = createFakeSocket('c_bob_phone', 'bob')
+    unwrap(manager.joinRoom(bobPhone, { code: room.code }))
+    assert.equal(manager.getStats().members, 2)
+
+    manager.evictUser('u_bob')
+    assert.equal(manager.getStats().members, 1)
+    assert.deepEqual(room.members.map(m => m.memberId), ['c_host'])
+  })
+
   it('rejects accounts that are not active Lux accounts', () => {
     const { manager, room } = setupRoom()
     const legacy = createFakeSocket('c_legacy', 'config-user')

@@ -399,3 +399,15 @@ export const removeDevice = async(userName: string, clientId: string) => {
   }
   await userSpace.removeDevice(clientId)
 }
+
+export const disconnectUserSessions = (userName: string) => {
+  if (!wss) return
+  for (const client of [...wss.clients]) {
+    if (client.userInfo?.name != userName) continue
+    client.isReady = false
+    for (const name of Object.keys(client.moduleReadys) as Array<keyof LX.Socket['moduleReadys']>) {
+      client.moduleReadys[name] = false
+    }
+    client.close(SYNC_CLOSE_CODE.normal)
+  }
+}

@@ -747,6 +747,9 @@ function UsersCard({ users, refresh, notify }: { users: UserView[], refresh: () 
   const [codes, setCodes] = useState<Record<string, string>>({})
   const [devicesByUser, setDevicesByUser] = useState<Record<string, Device[]>>({})
   const [devicesOpen, setDevicesOpen] = useState<Record<string, boolean>>({})
+  const [deleteTarget, setDeleteTarget] = useState<UserView | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState('')
+  const [deleteBusy, setDeleteBusy] = useState(false)
 
   const toggleDevices = async(user: UserView) => {
     if (devicesOpen[user.id]) {
@@ -792,6 +795,43 @@ function UsersCard({ users, refresh, notify }: { users: UserView[], refresh: () 
       notify('连接码已重置')
     } catch (error) {
       notify(error instanceof Error ? error.message : '重置失败')
+    }
+  }
+
+  const startDelete = (user: UserView) => {
+    setDeleteTarget(user)
+    setDeleteConfirm('')
+  }
+
+  const cancelDelete = () => {
+    if (deleteBusy) return
+    setDeleteTarget(null)
+    setDeleteConfirm('')
+  }
+
+  const confirmDelete = async() => {
+    if (!deleteTarget || deleteConfirm !== deleteTarget.username) return
+    setDeleteBusy(true)
+    try {
+      await adminApi.deleteUser(deleteTarget.id)
+      setCodes(current => {
+        const next = { ...current }
+        delete next[deleteTarget.id]
+        return next
+      })
+      setDevicesOpen(current => {
+        const next = { ...current }
+        delete next[deleteTarget.id]
+        return next
+      })
+      setDeleteTarget(null)
+      setDeleteConfirm('')
+      notify('用户已永久删除')
+      await refresh()
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '删除失败')
+    } finally {
+      setDeleteBusy(false)
     }
   }
 
@@ -841,6 +881,9 @@ function UsersCard({ users, refresh, notify }: { users: UserView[], refresh: () 
                 <button type="button" className="lux-btn sm ghost" onClick={() => void toggleDevices(user)}>
                   <IconDevices />{devicesOpen[user.id] ? '隐藏设备' : '查看设备'}
                 </button>
+                <button type="button" className="lux-btn sm ghost" style={{ color: 'var(--danger, #b91c1c)' }} onClick={() => startDelete(user)}>
+                  <IconTrash />删除
+                </button>
               </div>
             ) : (
               <div className="lux-note" style={{ textAlign: 'right' }}>配置文件/环境变量用户<br />不可在此显示或重置连接码</div>
@@ -860,6 +903,36 @@ function UsersCard({ users, refresh, notify }: { users: UserView[], refresh: () 
                       <span><b>{device.deviceName || 'Unknown'}</b> · {formatDate(device.lastConnectDate)}</span>
                     </div>
                   ))}
+              </div>
+            ) : null}
+            {deleteTarget?.id == user.id ? (
+              <div style={{ flexBasis: '100%', marginLeft: 52, padding: '10px 12px', borderRadius: 10, border: '1px solid #fecaca', background: '#fff7f7' }}>
+                <p className="lux-note" style={{ color: '#991b1b', marginBottom: 8 }}>
+                  此操作不可恢复：将永久删除该用户及其登录会话、已授权设备、同步歌单/数据、LX 连接码、其创建的邀请码，并移出一起听房间。
+                </p>
+                <label className="lux-note" style={{ display: 'block', marginBottom: 6 }}>
+                  请输入用户名 <b>{deleteTarget.username}</b> 以确认删除
+                </label>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <input
+                    className="lux-input"
+                    value={deleteConfirm}
+                    onChange={event => setDeleteConfirm(event.target.value)}
+                    placeholder={deleteTarget.username}
+                    autoComplete="off"
+                    style={{ minWidth: 200, flex: '1 1 200px' }}
+                  />
+                  <button type="button" className="lux-btn sm ghost" onClick={cancelDelete} disabled={deleteBusy}>取消</button>
+                  <button
+                    type="button"
+                    className="lux-btn sm primary"
+                    style={{ background: '#b91c1c', borderColor: '#b91c1c' }}
+                    disabled={deleteBusy || deleteConfirm !== deleteTarget.username}
+                    onClick={() => void confirmDelete()}
+                  >
+                    永久删除
+                  </button>
+                </div>
               </div>
             ) : null}
           </div>

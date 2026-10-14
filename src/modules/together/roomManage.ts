@@ -327,6 +327,18 @@ export class RoomManager {
     this.joinFailures.clear()
   }
 
+  /** Remove every room membership for a deleted Lux account (all devices). */
+  evictUser(userId: string) {
+    for (const room of [...this.rooms.values()]) {
+      while (true) {
+        const memberId = [...room.members.entries()].find(([, member]) => member.info.userId == userId)?.[0]
+        if (!memberId) break
+        if (room.hostId == memberId) this.removeHost(room, 'host_left')
+        else this.removeMember(room, memberId, 'left')
+      }
+    }
+  }
+
   // ---- internals ----
 
   private generateCode() {
