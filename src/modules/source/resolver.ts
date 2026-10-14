@@ -307,7 +307,8 @@ export const testScriptAction = async(
   try {
     const q = action == 'musicUrl' ? pickQuality(host, musicInfo.source, musicInfo, quality ?? '128k') : undefined
     if (action == 'musicUrl' && !q) throw new Error('quality not supported')
-    const info = action == 'musicUrl' ? { type: q, musicInfo } : { musicInfo }
+    const scriptMusicInfo = normalizeScriptMusicInfo(musicInfo)
+    const info = action == 'musicUrl' ? { type: q, musicInfo: scriptMusicInfo } : { musicInfo: scriptMusicInfo }
     const settings = getSourceSettings()
     const raw = await host.callAction(action, musicInfo.source, info, settings.timeoutMs)
     const durationMs = Date.now() - started
