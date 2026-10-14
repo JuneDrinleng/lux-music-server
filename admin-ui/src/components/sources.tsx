@@ -7,6 +7,17 @@ import type { SourceScriptView, SourcesAdminResponse } from '@/types'
 
 type UploadMode = 'paste' | 'file' | 'url'
 
+type FileUploadOutcome = {
+  fileName: string
+  ok: boolean
+  detail: string
+}
+
+const jsFilesFromList = (list: FileList | null | undefined): File[] => {
+  if (!list?.length) return []
+  return [...list].filter(f => f.name.toLowerCase().endsWith('.js'))
+}
+
 const statusLabel = (script: SourceScriptView) => {
   switch (script.status) {
     case 'ready': return { tone: 'ok' as const, text: '就绪' }
@@ -27,38 +38,120 @@ function UploadPanel({ refresh, notify }: { refresh: () => Promise<void>, notify
   const [mode, setMode] = useState<UploadMode>('paste')
   const [enableAfter, setEnableAfter] = useState(false)
   const [uploadError, setUploadError] = useState<string | null>(null)
+  const [fileOutcomes, setFileOutcomes] = useState<FileUploadOutcome[]>([])
   const [busy, setBusy] = useState(false)
+  const [dragOver, setDragOver] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const [pickedFile, setPickedFile] = useState<File | null>(null)
+  const [pickedFiles, setPickedFiles] = useState<File[]>([])
+
+  const applyPickedFiles = (files: File[]) => {
+    const jsOnly = files.filter(f => f.name.toLowerCase().endsWith('.js'))
+    if (files.length && !jsOnly.length) {
+      setUploadError('仅支持 .js 文件')
+      return
+    }
+    setUploadError(null)
+    setFileOutcomes([])
+    setPickedFiles(jsOnly)
+  }
+
+  const uploadScriptWithOptionalEnable = async(script: string, label: string): Promise<FileUploadOutcome> => {
+    const uploaded = await adminApi.uploadSourceAttempt({ script })
+    if (!uploaded.ok) return { fileName: label, ok: false, detail: uploaded.message }
+    if (!enableAfter) {
+      return { fileName: label, ok: true, detail: `成功 · ${uploaded.script.name}（已保存，默认禁用）` }
+    }
+    const enabled = await adminApi.enableSourceAttempt(uploaded.script.id)
+    if (!enabled.ok) {
+      return { fileName: label, ok: false, detail: `已保存 ${uploaded.script.name}，但启用失败：${enabled.message}` }
+    }
+    if (enabled.script.status == 'error' && enabled.script.error) {
+      return { fileName: label, ok: false, detail: `已保存 ${uploaded.script.name}，但启用失败：${enabled.script.error}` }
+    }
+    const initHint = enabled.script.status == 'ready' ? '已启用' : '正在初始化…'
+    return { fileName: label, ok: true, detail: `成功 · ${uploaded.script.name}（${initHint}）` }
+  }
+
+  const uploadFilesBatch = async(files: File[]) => {
+    const outcomes: FileUploadOutcome[] = []
+    for (const file of files) {
+      try {
+        const script = await readFileAsText(file)
+        outcomes.push(await uploadScriptWithOptionalEnable(script, file.name))
+      } catch (err) {
+        outcomes.push({
+          fileName: file.name,
+          ok: false,
+          detail: err instanceof Error ? err.message : '无法读取文件',
+        })
+      }
+    }
+    setFileOutcomes(outcomes)
+    const okCount = outcomes.filter(o => o.ok).length
+    const failCount = outcomes.length - okCount
+    if (failCount == 0) notify(`已上传 ${okCount} 个脚本`)
+    else if (okCount == 0) notify(`全部失败（${failCount} 个）`)
+    else notify(`完成：${okCount} 成功，${failCount} 失败`)
+    await refresh()
+  }
 
   const submit = async(event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     setUploadError(null)
+    setFileOutcomes([])
     setBusy(true)
     const form = event.currentTarget
     try {
+      if (mode == 'file') {
+        const fromInput = jsFilesFromList(fileInputRef.current?.files)
+        const files = pickedFiles.length ? pickedFiles : fromInput
+        if (!files.length) throw new Error('请选择至少一个 .js 脚本文件')
+        if (files.length > 1) {
+          await uploadFilesBatch(files)
+          setPickedFiles([])
+          if (fileInputRef.current) fileInputRef.current.value = ''
+          return
+        }
+        const script = await readFileAsText(files[0])
+        const outcome = await uploadScriptWithOptionalEnable(script, files[0].name)
+        setFileOutcomes([outcome])
+        if (!outcome.ok) {
+          setUploadError(outcome.detail)
+          notify(outcome.detail)
+        } else {
+          notify(outcome.detail)
+        }
+        form.reset()
+        setPickedFiles([])
+        if (fileInputRef.current) fileInputRef.current.value = ''
+        await refresh()
+        return
+      }
+
       let script: string | undefined
       let url: string | undefined
       if (mode == 'url') {
         url = (form.elements.namedItem('url') as HTMLInputElement).value.trim()
-      } else if (mode == 'file') {
-        const file = pickedFile ?? fileInputRef.current?.files?.[0]
-        if (!file) throw new Error('请选择 .js 脚本文件')
-        if (!file.name.toLowerCase().endsWith('.js')) throw new Error('仅支持 .js 文件')
-        script = await readFileAsText(file)
       } else {
         script = (form.elements.namedItem('script') as HTMLTextAreaElement).value
         if (!script.trim()) throw new Error('请粘贴脚本内容')
       }
 
-      const { script: entry } = await adminApi.uploadSource(url ? { url } : { script })
+      const uploaded = url
+        ? await adminApi.uploadSourceAttempt({ url })
+        : await adminApi.uploadSourceAttempt({ script: script! })
+      if (!uploaded.ok) throw new Error(uploaded.message)
+
       form.reset()
-      setPickedFile(null)
+      setPickedFiles([])
       if (fileInputRef.current) fileInputRef.current.value = ''
 
       if (enableAfter) {
-        const enabled = await adminApi.enableSource(entry.id)
-        if (enabled.script.status == 'error' && enabled.script.error) {
+        const enabled = await adminApi.enableSourceAttempt(uploaded.script.id)
+        if (!enabled.ok) {
+          setUploadError(`脚本已保存，但启用失败：${enabled.message}`)
+          notify('脚本已上传，启用失败')
+        } else if (enabled.script.status == 'error' && enabled.script.error) {
           setUploadError(`脚本已保存，但启用失败：${enabled.script.error}`)
           notify('脚本已上传，启用失败')
         } else {
@@ -75,6 +168,13 @@ function UploadPanel({ refresh, notify }: { refresh: () => Promise<void>, notify
     } finally {
       setBusy(false)
     }
+  }
+
+  const onDropFiles = (event: React.DragEvent) => {
+    event.preventDefault()
+    setDragOver(false)
+    if (mode != 'file' || busy) return
+    applyPickedFiles([...event.dataTransfer.files])
   }
 
   return (
@@ -97,18 +197,39 @@ function UploadPanel({ refresh, notify }: { refresh: () => Promise<void>, notify
           : mode == 'file'
             ? (
               <div className="lux-field">
-                <label htmlFor="script-file">脚本文件 (.js)</label>
-                <input
-                  id="script-file"
-                  ref={fileInputRef}
-                  name="scriptFile"
-                  type="file"
-                  accept=".js,text/javascript,application/javascript"
-                  required
-                  onChange={e => setPickedFile(e.target.files?.[0] ?? null)}
-                  style={{ width: '100%' }}
-                />
-                {pickedFile ? <p className="lux-note" style={{ marginTop: 6 }}>{pickedFile.name} · {(pickedFile.size / 1024).toFixed(1)} KB</p> : null}
+                <label htmlFor="script-file">脚本文件 (.js，可多选)</label>
+                <div
+                  className={dragOver ? 'lux-drop on' : 'lux-drop'}
+                  onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+                  onDragLeave={() => setDragOver(false)}
+                  onDrop={onDropFiles}
+                  style={{
+                    border: '1px dashed var(--line)',
+                    borderRadius: 12,
+                    padding: 14,
+                    background: dragOver ? 'var(--surface-2)' : 'transparent',
+                  }}
+                >
+                  <input
+                    id="script-file"
+                    ref={fileInputRef}
+                    name="scriptFile"
+                    type="file"
+                    accept=".js,text/javascript,application/javascript"
+                    multiple
+                    required={!pickedFiles.length}
+                    onChange={e => applyPickedFiles(jsFilesFromList(e.target.files))}
+                    style={{ width: '100%' }}
+                  />
+                  <p className="lux-note" style={{ marginTop: 8 }}>可一次选择多个文件，或拖拽 .js 到此处</p>
+                  {pickedFiles.length ? (
+                    <ul className="lux-note" style={{ marginTop: 8, paddingLeft: 18 }}>
+                      {pickedFiles.map(f => (
+                        <li key={`${f.name}-${f.size}`}>{f.name} · {(f.size / 1024).toFixed(1)} KB</li>
+                      ))}
+                    </ul>
+                  ) : null}
+                </div>
               </div>
             )
             : (
@@ -131,8 +252,20 @@ function UploadPanel({ refresh, notify }: { refresh: () => Promise<void>, notify
         {uploadError ? (
           <p className="lux-note" role="alert" style={{ color: 'var(--danger)', whiteSpace: 'pre-wrap' }}>{uploadError}</p>
         ) : null}
+        {fileOutcomes.length ? (
+          <div className="lux-rows" style={{ gap: 6 }} role="status" aria-live="polite">
+            {fileOutcomes.map(row => (
+              <div key={row.fileName} className="lux-row" style={{ minHeight: 44, padding: '8px 12px' }}>
+                <span className="mono" style={{ fontWeight: 600 }}>{row.fileName}</span>
+                <span className="lux-note" style={{ color: row.ok ? 'var(--meta)' : 'var(--danger)' }}>
+                  {row.ok ? '成功' : '失败'} · {row.detail}
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
         <button type="submit" className="lux-btn primary" style={{ height: 40, padding: '0 18px' }} disabled={busy}>
-          {busy ? '上传中…' : '上传'}
+          {busy ? '上传中…' : pickedFiles.length > 1 ? `上传 ${pickedFiles.length} 个文件` : '上传'}
         </button>
       </form>
     </div>

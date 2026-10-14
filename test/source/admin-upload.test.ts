@@ -122,6 +122,37 @@ describe('admin sources upload', () => {
     assert.equal(parseJson(res.body).message, 'API route not found')
   })
 
+  it('accepts multiple sequential uploads without coupling failures', async() => {
+    const token = await adminToken(app)
+    const headers = { 'content-type': 'application/json', authorization: `Bearer ${token}` }
+    const scriptB = minimalScript.replace('@name test-src', '@name test-src-b')
+    const ok1 = await app.inject({
+      method: 'POST',
+      url: '/api/admin/sources',
+      headers,
+      payload: { script: minimalScript },
+    })
+    assert.equal(ok1.statusCode, 200, ok1.body)
+    const bad = await app.inject({
+      method: 'POST',
+      url: '/api/admin/sources',
+      headers,
+      payload: { script: 'void lx.send("inited", {})' },
+    })
+    assert.equal(bad.statusCode, 422)
+    const ok2 = await app.inject({
+      method: 'POST',
+      url: '/api/admin/sources',
+      headers,
+      payload: { script: scriptB },
+    })
+    assert.equal(ok2.statusCode, 200, ok2.body)
+    const list = await app.inject({ method: 'GET', url: '/api/admin/sources', headers })
+    assert.equal(list.statusCode, 200)
+    const names = (parseJson(list.body).scripts as { name: string }[]).map(s => s.name)
+    assert.deepEqual(names.sort(), ['test-src', 'test-src-b'].sort())
+  })
+
   it('allows large script bodies up to source limit on this route', async() => {
     const token = await adminToken(app)
     const pad = 'x'.repeat(300 * 1024)
