@@ -12,4 +12,5 @@ export const sync = async(socket: LX.Socket) => {
     })
   }
   getRoomManager().handleSocketReady(socket)
+  await socket.remote.together_sync_finished()
 }

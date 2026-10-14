@@ -27,6 +27,8 @@ declare namespace LX {
 
     type ClientSyncActions = WarpPromiseRecord<{
       getEnabledFeatures: (serverType: ServerType, supportedFeatures: SupportedFeatures) => EnabledFeatures
+      /** Called after the server finished `togetherModule.sync` for this socket. */
+      together_sync_finished: () => void
       finished: () => void
     }>
     type ClientSyncHandlerActions<Socket> = WarpSyncHandlerActions<Socket, ClientSyncActions>

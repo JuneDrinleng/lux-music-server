@@ -43,7 +43,10 @@ export const createFakeSocket = (clientId: string, userName: string, deviceName 
   const pushes: Push[] = []
   const remote = new Proxy({}, {
     get: (_target, method: string) => async(payload: unknown) => {
-      pushes.push({ method, payload: JSON.parse(JSON.stringify(payload)) })
+      pushes.push({
+        method,
+        payload: payload === undefined ? undefined : JSON.parse(JSON.stringify(payload)),
+      })
     },
   })
   const socket = {

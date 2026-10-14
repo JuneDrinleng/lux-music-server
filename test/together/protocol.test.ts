@@ -47,15 +47,19 @@ describe('together protocol wiring', () => {
         advertised = supported
         return {}
       },
+      async together_sync_finished() {},
       async finished() {},
     } as unknown as LX.Socket['remote']
     await sync(socket)
     assert.equal(advertised!.together, 1)
     assert.equal(socket.moduleReadys.together, false)
 
+    let togetherFinished = 0
     socket.remote.getEnabledFeatures = async() => ({ together: true })
+    socket.remote.together_sync_finished = async() => { togetherFinished++ }
     await sync(socket)
     assert.equal(socket.moduleReadys.together, true)
+    assert.equal(togetherFinished, 1)
     assert.equal(socket.feature.together, true)
     assert.equal(unwrap(await handler['together:ping'](socket, { t0: 5 })).t0, 5)
 
