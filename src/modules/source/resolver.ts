@@ -1,4 +1,6 @@
+import log4js from 'log4js'
 import { getSourceSettings } from './config'
+import { normalizeScriptMusicInfo } from './normalizeScriptMusicInfo'
 import { getSourceCache, setSourceCache, type SourceCacheKind } from './cache'
 import { QUALITY_FALLBACK_ORDER, SOURCE_LIMITS, TOTAL_TIMEOUT_FACTOR } from './protocol'
 import { scriptPriority } from './priority'
@@ -54,6 +56,8 @@ const hostsFor = (source: LX.OnlineSource, action: Action) =>
     .filter(h => h.view.sources[source]?.actions.includes(action))
     .sort((a, b) => scriptPriority(a.id) - scriptPriority(b.id))
 
+const logger = log4js.getLogger('source')
+
 const inFlight = new Map<string, Promise<LX.Sync.LuxResult<unknown>>>()
 
 const runDeduped = <T>(key: string, task: () => Promise<LX.Sync.LuxResult<T>>) => {
@@ -95,7 +99,8 @@ const attemptScripts = async(
       q = pickQuality(host, musicInfo.source, musicInfo, quality!) ?? undefined
       if (!q) continue
     }
-    const info = ctx.action == 'musicUrl' ? { type: q, musicInfo } : { musicInfo }
+    const scriptMusicInfo = normalizeScriptMusicInfo(musicInfo)
+    const info = ctx.action == 'musicUrl' ? { type: q, musicInfo: scriptMusicInfo } : { musicInfo: scriptMusicInfo }
     try {
       const remaining = ctx.deadline - Date.now()
       const timeout = Math.min(ctx.perCallTimeout, remaining)
@@ -135,6 +140,10 @@ const buildCandidates = (
 export const resolveMusicUrl = async(socket: LX.Socket, req: LX.Sync.Source.MusicUrlRequest): Promise<LX.Sync.LuxResult<LX.Sync.Source.MusicUrlResult>> => {
   try {
     const musicInfo = parseMusicInfoOnline(req.musicInfo)
+    const wire = normalizeScriptMusicInfo(musicInfo)
+    logger.info(
+      `resolveMusicUrl ${musicInfo.source} id=${musicInfo.id} meta.songId=${String(musicInfo.meta.songId ?? '')} script.songmid=${String((wire as unknown as { songmid?: string }).songmid ?? '')}`,
+    )
     const quality = parseQuality(req.quality)
     const allowToggle = req.allowToggleSource !== false
     const toggles = allowToggle ? parseToggleCandidates(musicInfo.source, musicInfo.id, req.toggleCandidates) : []
