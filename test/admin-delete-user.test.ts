@@ -99,6 +99,48 @@ describe('admin delete user', () => {
     assert.equal(getAccountStore().getInvites().some(row => row.id == invite.id), false)
   })
 
+  it('hides env/config users after deleting the managed account with the same name', async() => {
+    await getAccountStore().createUser({ username: 'admin-baseline', password: 'admin-pass', role: 'admin' })
+    const victim = await getAccountStore().createUser({ username: 'junelux', password: 'victim-pass', role: 'user' })
+    getAccountStore().setBaselineConfigUsers([{ name: 'junelux', password: '777.888', dataPath: '' }])
+    const adminToken = await login('admin-baseline', 'admin-pass')
+
+    const before = (await app.inject({
+      method: 'GET',
+      url: '/api/admin/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+    }))
+    assert.ok(parseJson(before.body).users.some((user: { username: string, source: string }) => user.username == 'junelux' && user.source == 'managed'))
+
+    const res = await app.inject({
+      method: 'DELETE',
+      url: `/api/admin/users/${victim.id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    })
+    assert.equal(res.statusCode, 200)
+
+    const after = parseJson((await app.inject({
+      method: 'GET',
+      url: '/api/admin/users',
+      headers: { authorization: `Bearer ${adminToken}` },
+    })).body).users as Array<{ username: string }>
+    assert.equal(after.some(user => user.username == 'junelux'), false)
+    assert.equal(getAccountStore().getUserViews().some(user => user.username == 'junelux'), false)
+  })
+
+  it('rejects deleting config-defined users by id', async() => {
+    getAccountStore().setBaselineConfigUsers([{ name: 'env-only', password: 'code', dataPath: '' }])
+    await getAccountStore().createUser({ username: 'admin-config', password: 'admin-pass', role: 'admin' })
+    const token = await login('admin-config', 'admin-pass')
+    const res = await app.inject({
+      method: 'DELETE',
+      url: '/api/admin/users/config:env-only',
+      headers: { authorization: `Bearer ${token}` },
+    })
+    assert.equal(res.statusCode, 400)
+    assert.match(parseJson(res.body).message as string, /config or environment/i)
+  })
+
   it('requires admin auth', async() => {
     const { victim } = await setupAdminAndUser()
     const res = await app.inject({

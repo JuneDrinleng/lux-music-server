@@ -17,6 +17,7 @@ const createEmptyStore = (): LuxAccountStoreData => ({
   tokenSecret: process.env.LUX_TOKEN_SECRET || createSecret(),
   users: [],
   invites: [],
+  suppressedConfigUsernames: [],
 })
 
 const sanitizeUser = (user: LuxManagedUser): PublicUserInfo => ({
@@ -34,6 +35,8 @@ const sanitizeUser = (user: LuxManagedUser): PublicUserInfo => ({
 export class AccountStore {
   private readonly filePath: string
   private data: LuxAccountStoreData
+  /** config.js / LX_USER_* users captured at process startup (before managed projection). */
+  private baselineConfigUsers: LX.UserConfig[] = []
 
   constructor(dataPath: string) {
     const dir = path.join(dataPath, 'lux')
@@ -51,11 +54,30 @@ export class AccountStore {
       if (!data.tokenSecret) data.tokenSecret = process.env.LUX_TOKEN_SECRET || createSecret()
       data.users ??= []
       data.invites ??= []
+      data.suppressedConfigUsernames ??= []
       return data
     } catch (err) {
       console.error('Read accounts store error:', err)
       return createEmptyStore()
     }
+  }
+
+  setBaselineConfigUsers(users: LX.UserConfig[]) {
+    this.baselineConfigUsers = users.map(user => ({
+      ...user,
+      dataPath: user.dataPath || '',
+    }))
+  }
+
+  private getConfigOriginUsers(): LX.UserConfig[] {
+    const source = this.baselineConfigUsers.length
+      ? this.baselineConfigUsers
+      : global.lx.config.users
+    const suppressed = this.data.suppressedConfigUsernames ?? []
+    return source.filter(user =>
+      !this.findManagedUserByUsername(user.name) &&
+      !suppressed.includes(user.name),
+    )
   }
 
   private refreshGlobalUsers() {
@@ -141,8 +163,7 @@ export class AccountStore {
   }
 
   getUserViews(): LuxUserView[] {
-    const legacyUsers = global.lx.config.users
-      .filter(user => !this.findManagedUserByUsername(user.name))
+    const legacyUsers = this.getConfigOriginUsers()
       .map<LuxUserView>(user => ({
         id: `config:${user.name}`,
         username: user.name,
@@ -179,7 +200,7 @@ export class AccountStore {
   }
 
   getSyncUsers(): LX.UserConfig[] {
-    const legacyUsers = global.lx.config.users.filter(user => !this.findManagedUserByUsername(user.name))
+    const legacyUsers = this.getConfigOriginUsers()
     const managedUsers = this.data.users
       .filter(user => user.status == 'active')
       .map<LX.UserConfig>(user => ({
@@ -217,7 +238,9 @@ export class AccountStore {
     role?: LuxUserRole
     displayName?: string
   }) {
-    if (this.findManagedUserByUsername(username) || global.lx.config.users.some(user => user.name == username)) throw new Error('User name already exists')
+    if (this.findManagedUserByUsername(username) || this.getConfigOriginUsers().some(user => user.name == username)) {
+      throw new Error('User name already exists')
+    }
     const passwordHash = await hashPassword(password)
     const user = this.createManagedUserSync({ username, passwordHash, role, displayName })
     this.saveSync()
@@ -360,6 +383,13 @@ export class AccountStore {
     const index = this.data.users.findIndex(candidate => candidate.id == userId)
     if (index < 0) throw new Error('User not found')
     this.data.users.splice(index, 1)
+
+    if (this.baselineConfigUsers.some(entry => entry.name == username)) {
+      const suppressed = this.data.suppressedConfigUsernames ?? []
+      if (!suppressed.includes(username)) suppressed.push(username)
+      this.data.suppressedConfigUsernames = suppressed
+    }
+
     this.saveSync()
 
     const userDir = path.join(global.lx.userPath, getUserDirname(username))

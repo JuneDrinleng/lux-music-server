@@ -183,6 +183,7 @@ checkAndCreateDir(global.lx.logPath)
 checkAndCreateDir(global.lx.dataPath)
 checkAndCreateDir(global.lx.userPath)
 const accountStore = initAccountStore(global.lx.dataPath)
+accountStore.setBaselineConfigUsers(global.lx.config.users)
 global.lx.config.users = accountStore.getSyncUsers()
 checkUserConfig(global.lx.config.users)
 
