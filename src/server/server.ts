@@ -163,7 +163,10 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
       funcsObj: callObj,
       timeout: 120 * 1000,
       sendMessage(data) {
-        if (disconnected) throw new Error('disconnected')
+        if (disconnected) {
+          syncLog.warn('drop sync reply: client already disconnected')
+          return
+        }
         void encryptMsg(socket.keyInfo, JSON.stringify(data)).then((data) => {
           // console.log('sendData', eventName)
           socket.send(data)
