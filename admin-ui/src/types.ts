@@ -48,6 +48,7 @@ export interface OnlineDevice {
   deviceName?: string
   isMobile?: boolean
   lastConnectDate?: number
+  userName?: string
 }
 
 export interface ServerStatus {

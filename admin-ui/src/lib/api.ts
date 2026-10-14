@@ -69,6 +69,7 @@ export const adminApi = {
   updateUser: (id: string, body: { status?: UserStatus }) => request<{ user: PublicUser }>(`/api/admin/users/${id}`, { method: 'PATCH', body: jsonBody(body) }),
   revealUserSyncCode: (id: string) => request<{ syncCode: string }>(`/api/admin/users/${id}/sync-code`),
   resetUserSyncCode: (id: string) => request<{ syncCode: string }>(`/api/admin/users/${id}/sync-code/reset`, { method: 'POST' }),
+  userDevices: (id: string) => request<{ devices: Device[] }>(`/api/admin/users/${id}/devices`),
   invites: () => request<{ invites: Invite[] }>('/api/admin/invites'),
   createInvite: (body: { code?: string, role: Role, maxUses: number }) => request<{ invite: Invite, code: string }>('/api/admin/invites', { method: 'POST', body: jsonBody(body) }),
   updateInvite: (id: string, body: { disabled?: boolean }) => request<{ invite: Invite }>(`/api/admin/invites/${id}`, { method: 'PATCH', body: jsonBody(body) }),
