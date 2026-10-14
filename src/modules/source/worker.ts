@@ -31,6 +31,7 @@ const MAX_UTIL_INPUT = 1024 * 1024
 const PRELOAD = String.raw`'use strict';
 (function(bridge, scriptInfoJson) {
   const post = bridge.post
+  const markInited = bridge.markInited
   const util = bridge.util
   const setTimer = bridge.setTimer
   const clearTimer = bridge.clearTimer
@@ -124,6 +125,7 @@ const PRELOAD = String.raw`'use strict';
       case EVENT_NAMES.inited:
         if (inited) return reject(new Error('Script is inited'))
         inited = true
+        markInited()
         post('inited', JSON.stringify(data === undefined ? null : data))
         return resolve()
       case EVENT_NAMES.updateAlert:
@@ -327,12 +329,17 @@ const run = () => {
   const timers = new Map<number, NodeJS.Timeout>()
   let timerSeq = 0
 
-  const reportError = (prefix: string, err: unknown) => {
+  const reportError = (prefix: string, err: unknown, level: 'error' | 'warn' = 'error') => {
     const text = `${prefix}${err instanceof Error ? (err.stack ?? err.message) : String(err)}`
-    port.postMessage({ type: 'bridge', name: 'log', json: JSON.stringify({ level: 'error', text }) } satisfies WorkerToMainMessage)
+    port.postMessage({ type: 'bridge', name: 'log', json: JSON.stringify({ level, text }) } satisfies WorkerToMainMessage)
   }
 
+  let scriptInited = false
+
   const bridge = Object.freeze({
+    markInited() {
+      scriptInited = true
+    },
     post(name: string, json: string) {
       if (typeof name != 'string' || typeof json != 'string') return
       if (json.length > MAX_BRIDGE_JSON) {
@@ -414,13 +421,17 @@ const run = () => {
     fatalExit()
   })
   process.on('unhandledRejection', reason => {
-    if (reason instanceof AggregateError) {
-      const parts = reason.errors.map(err => errorText(err, false)).filter(Boolean)
-      const detail = parts.length ? `${reason.message}: ${parts.join('; ')}` : reason.message
-      reportFatal('unhandledRejection: ', new Error(detail))
-    } else {
-      reportFatal('unhandledRejection: ', reason)
+    const formatted = reason instanceof AggregateError
+      ? new Error((() => {
+        const parts = reason.errors.map(err => errorText(err, false)).filter(Boolean)
+        return parts.length ? `${reason.message}: ${parts.join('; ')}` : reason.message
+      })())
+      : reason
+    if (scriptInited) {
+      reportError('unhandledRejection (after inited, worker kept alive): ', formatted, 'warn')
+      return
     }
+    reportFatal('unhandledRejection: ', formatted)
     fatalExit()
   })
 

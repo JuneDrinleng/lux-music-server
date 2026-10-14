@@ -32,19 +32,18 @@ describe('fatal worker errors after init', () => {
     await resetSourceRegistryForTests()
   })
 
-  it('does not auto-restart or heartbeat-loop after post-init unhandledRejection', async() => {
+  it('stays ready without auto-restart after post-init unhandledRejection', async() => {
     const uploaded = await uploadScript(initedThenFatal)
     const view = await enableScript(uploaded.id)
     assert.equal(view.status, 'ready')
     await new Promise(resolve => setTimeout(resolve, 1200))
     const stable = getScriptViews().find(s => s.id == uploaded.id)
     assert.ok(stable)
-    assert.equal(stable!.status, 'error')
-    assert.match(stable!.error ?? '', /unhandledRejection|registry fetch failed|mirror FAILED/)
+    assert.equal(stable!.status, 'ready')
     assert.doesNotMatch(stable!.error ?? '', /restarting in/)
     await new Promise(resolve => setTimeout(resolve, 1500))
     const later = getScriptViews().find(s => s.id == uploaded.id)
-    assert.equal(later!.status, 'error')
+    assert.equal(later!.status, 'ready')
     assert.doesNotMatch(later!.error ?? '', /restarting in/)
   })
 })
