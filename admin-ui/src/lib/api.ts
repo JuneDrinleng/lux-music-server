@@ -76,6 +76,29 @@ export const adminApi = {
   deleteInvite: (id: string) => request<{ ok: boolean }>(`/api/admin/invites/${id}`, { method: 'DELETE' }),
   sources: () => request<SourcesAdminResponse>('/api/admin/sources'),
   uploadSource: (body: { script?: string, scriptBase64?: string, url?: string }) => request<{ script: SourcesAdminResponse['scripts'][number] }>('/api/admin/sources', { method: 'POST', body: jsonBody(body) }),
+  /** Same as uploadSource but never throws — for multi-file uploads where one failure must not abort the rest. */
+  uploadSourceAttempt: async(body: { script?: string, scriptBase64?: string, url?: string }): Promise<
+    { ok: true, script: SourcesAdminResponse['scripts'][number] }
+    | { ok: false, message: string }
+  > => {
+    try {
+      const data = await request<{ script: SourcesAdminResponse['scripts'][number] }>('/api/admin/sources', { method: 'POST', body: jsonBody(body) })
+      return { ok: true, script: data.script }
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : '上传失败' }
+    }
+  },
+  enableSourceAttempt: async(id: string): Promise<
+    { ok: true, script: SourcesAdminResponse['scripts'][number] }
+    | { ok: false, message: string }
+  > => {
+    try {
+      const data = await request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/enable`, { method: 'POST' })
+      return { ok: true, script: data.script }
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : '启用失败' }
+    }
+  },
   enableSource: (id: string) => request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/enable`, { method: 'POST' }),
   disableSource: (id: string) => request<{ script: SourcesAdminResponse['scripts'][number] }>(`/api/admin/sources/${id}/disable`, { method: 'POST' }),
   deleteSource: (id: string) => request<{ ok: boolean }>(`/api/admin/sources/${id}`, { method: 'DELETE' }),
