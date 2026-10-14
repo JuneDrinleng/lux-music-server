@@ -414,7 +414,13 @@ const run = () => {
     fatalExit()
   })
   process.on('unhandledRejection', reason => {
-    reportFatal('unhandledRejection: ', reason)
+    if (reason instanceof AggregateError) {
+      const parts = reason.errors.map(err => errorText(err, false)).filter(Boolean)
+      const detail = parts.length ? `${reason.message}: ${parts.join('; ')}` : reason.message
+      reportFatal('unhandledRejection: ', new Error(detail))
+    } else {
+      reportFatal('unhandledRejection: ', reason)
+    }
     fatalExit()
   })
 

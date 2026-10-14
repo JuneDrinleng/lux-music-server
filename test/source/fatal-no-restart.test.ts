@@ -17,7 +17,7 @@ const initedThenFatal = `${HEADER}
 ;(function(){
   void lx.on('request', async () => 'https://example.com/a.mp3')
   void lx.send('inited', { sources: { kw: { type: 'music', actions: ['musicUrl'], qualitys: ['128k'] } } })
-  Promise.reject(new AggregateError([], 'registry fetch failed'))
+  Promise.reject(new AggregateError([new Error('mirror FAILED'), new Error('npm FAILED')], 'registry fetch failed'))
 })()
 `
 
@@ -40,7 +40,7 @@ describe('fatal worker errors after init', () => {
     const stable = getScriptViews().find(s => s.id == uploaded.id)
     assert.ok(stable)
     assert.equal(stable!.status, 'error')
-    assert.match(stable!.error ?? '', /unhandledRejection|registry fetch failed/)
+    assert.match(stable!.error ?? '', /unhandledRejection|registry fetch failed|mirror FAILED/)
     assert.doesNotMatch(stable!.error ?? '', /restarting in/)
     await new Promise(resolve => setTimeout(resolve, 1500))
     const later = getScriptViews().find(s => s.id == uploaded.id)
