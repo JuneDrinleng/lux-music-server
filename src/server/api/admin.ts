@@ -61,6 +61,12 @@ export const registerAdminApi = async(app: FastifyInstance) => {
   app.delete('/api/admin/users/:id', { preHandler: requireAdmin }, async(request: AuthRequest, reply) => {
     const id = (request.params as { id?: string }).id
     if (!id) return reply.code(400).send({ message: 'Missing user id' })
+    if (id.startsWith('config:')) {
+      const username = id.slice('config:'.length) || 'user'
+      return reply.code(400).send({
+        message: `User "${username}" is defined by server config or environment (LX_USER_* / config.js). Remove that definition and restart the server; it cannot be deleted from the admin console.`,
+      })
+    }
     const actor = getRequiredAuthUser(request)
     if (actor.id == id) return reply.code(400).send({ message: 'Cannot delete yourself' })
     const target = getAccountStore().findManagedUserById(id)

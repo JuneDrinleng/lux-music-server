@@ -66,6 +66,8 @@ export interface LuxAccountStoreData {
   tokenSecret: string
   users: LuxManagedUser[]
   invites: InviteCode[]
+  /** Usernames from config.js / LX_USER_* hidden after admin deletes the managed account with the same name. */
+  suppressedConfigUsernames?: string[]
 }
 
 export interface PublicUserInfo {
