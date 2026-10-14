@@ -32,5 +32,6 @@ describe('yehua script sandbox', () => {
     const { getScriptViews } = await import('../../src/modules/source')
     const stable = getScriptViews().find(s => s.id == uploaded.id)
     assert.equal(stable?.status, 'ready', stable?.error ?? 'expected worker to stay ready after registry bootstrap')
+    assert.doesNotMatch(stable?.error ?? '', /AggregateError/)
   })
 })

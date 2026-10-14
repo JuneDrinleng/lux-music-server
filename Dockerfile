@@ -11,6 +11,8 @@ RUN npm run build \
 
 FROM node:24-alpine AS final
 
+RUN apk add --no-cache ca-certificates && update-ca-certificates
+
 WORKDIR /server
 
 ENV NODE_ENV=production

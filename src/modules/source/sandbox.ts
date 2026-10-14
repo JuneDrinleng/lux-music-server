@@ -3,6 +3,13 @@ import path from 'node:path'
 import { Worker } from 'node:worker_threads'
 import log4js from 'log4js'
 import { getSourceSettings } from './config'
+import {
+  flowerSourceInfoFetchUrls,
+  formatHttpFailure,
+  isFlowerSourceInfoRequest,
+  rewriteFlowerSourceInfoRequest,
+  wrapFlowerRegistryBody,
+} from './flowerHttpCompat'
 import { BlockedAddressError, safeRequest } from './httpClient'
 import { SOURCE_LIMITS } from './protocol'
 import { normalizeInitedSources, type SourceScriptView } from './scriptManage'
@@ -330,8 +337,71 @@ export class ScriptSandboxHost {
     else pending.reject(new Error(String(payload ?? 'failed')))
   }
 
+  private rewriteFlowerApiOrigin(rawUrl: string) {
+    const origin = process.env.LUX_SOURCE_FLOWER_API_ORIGIN?.trim()
+    if (!origin) return rawUrl
+    try {
+      const u = new URL(rawUrl)
+      if (u.hostname != '97.64.37.235') return rawUrl
+      const base = new URL(origin.endsWith('/') ? origin : `${origin}/`)
+      u.protocol = base.protocol
+      u.hostname = base.hostname
+      u.port = base.port
+      return u.toString()
+    } catch {
+      return rawUrl
+    }
+  }
+
+  private async fetchScriptHttp(
+    originalUrl: string,
+    built: ReturnType<typeof buildRequestBody>,
+    timeoutMs: number,
+  ) {
+    const requestUrl = this.rewriteFlowerApiOrigin(originalUrl)
+    const infoRequest = isFlowerSourceInfoRequest(requestUrl) || rewriteFlowerSourceInfoRequest(requestUrl) != null
+    const urlsToTry = infoRequest ? flowerSourceInfoFetchUrls() : [requestUrl]
+    let lastErr: unknown
+    for (const tryUrl of urlsToTry) {
+      try {
+        const result = await safeRequest(tryUrl, {
+          method: built.method,
+          headers: built.headers,
+          body: built.body,
+          timeoutMs,
+          maxBytes: SOURCE_LIMITS.requestBodyBytes,
+        })
+        let body = result.body
+        let statusCode = result.statusCode
+        if (infoRequest && statusCode == 200) {
+          try {
+            body = wrapFlowerRegistryBody(body)
+          } catch (err) {
+            logger.warn(`script ${this.id} flower registry adapt failed for ${tryUrl}: ${formatHttpFailure(err)}`)
+          }
+        }
+        if (statusCode >= 400) {
+          logger.warn(
+            `script ${this.id} http ${originalUrl} via ${tryUrl} -> HTTP ${statusCode} (${body.toString('utf8').slice(0, 160).replace(/\s+/g, ' ')})`,
+          )
+        } else {
+          logger.info(`script ${this.id} http ${originalUrl} via ${tryUrl} -> ${statusCode}`)
+        }
+        return {
+          statusCode,
+          statusMessage: result.statusMessage,
+          headers: result.headers,
+          body,
+        }
+      } catch (err) {
+        lastErr = err
+        logger.warn(`script ${this.id} http ${originalUrl} via ${tryUrl} failed: ${formatHttpFailure(err)}`)
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr ?? 'request failed'))
+  }
+
   private async handleHttpRequest(data: { id: number, url: string, options: Record<string, unknown> }) {
-    const settings = getSourceSettings()
     const built = buildRequestBody(data.options ?? {})
     const timeoutMs = Math.min(
       typeof data.options?.timeout == 'number' && data.options.timeout > 0 ? data.options.timeout : SOURCE_LIMITS.requestDefaultTimeoutMs,
@@ -347,16 +417,10 @@ export class ScriptSandboxHost {
     }
     this.pendingHttp.set(data.id, { abort: () => undefined })
     try {
-      const result = await safeRequest(data.url, {
-        method: built.method,
-        headers: built.headers,
-        body: built.body,
-        timeoutMs,
-        maxBytes: SOURCE_LIMITS.requestBodyBytes,
-      })
+      const result = await this.fetchScriptHttp(data.url, built, timeoutMs)
       let body: string | Uint8Array
       if (built.binary) body = result.body
-      else body = JSON.stringify(result.body.toString('utf8'))
+      else body = result.body.toString('utf8')
       respond(null, {
         statusCode: result.statusCode,
         statusMessage: result.statusMessage,
@@ -365,7 +429,7 @@ export class ScriptSandboxHost {
         binary: built.binary,
       })
     } catch (err) {
-      const message = err instanceof BlockedAddressError ? err.message : (err instanceof Error ? err.message : String(err))
+      const message = err instanceof BlockedAddressError ? err.message : formatHttpFailure(err)
       respond(message)
     } finally {
       this.pendingHttp.delete(data.id)
