@@ -3,7 +3,7 @@
  * LX 1.x-style fields on the same object (`songmid`, `hash`, …) — see mobile `toOldMusicInfo`.
  */
 export const normalizeScriptMusicInfo = (musicInfo: LX.Music.MusicInfoOnline): LX.Music.MusicInfoOnline => {
-  const meta = musicInfo.meta as Record<string, unknown>
+  const meta = musicInfo.meta as unknown as Record<string, unknown>
   const songmid = String(meta.songId ?? musicInfo.id)
   const enriched: Record<string, unknown> = {
     ...musicInfo,
@@ -25,5 +25,5 @@ export const normalizeScriptMusicInfo = (musicInfo: LX.Music.MusicInfoOnline): L
     default:
       break
   }
-  return enriched as LX.Music.MusicInfoOnline
+  return enriched as unknown as LX.Music.MusicInfoOnline
 }
