@@ -125,6 +125,7 @@ const loadUsers = async() => {
       <p>登录密码: ${user.hasLoginPassword ? '已设置' : '未设置'} · 连接码: ${user.hasSyncCode ? '已设置' : '未设置'}</p>
       ${user.source === 'managed' ? `<div class="actions">
         <button data-toggle-user="${user.id}" data-status="${user.status === 'active' ? 'disabled' : 'active'}">${user.status === 'active' ? '禁用' : '启用'}</button>
+        <button class="danger" data-delete-user="${user.id}" data-username="${user.username}">删除</button>
         <button class="ghost" data-toggle-user-code="${user.id}">显示连接码</button>
         <button data-reset-user-code="${user.id}">重置连接码</button>
       </div>
@@ -277,6 +278,16 @@ document.addEventListener('click', async event => {
       await api(`/api/me/devices/${target.dataset.removeDevice}`, { method: 'DELETE' })
       await loadDevices()
       message('设备已删除')
+    } else if (target.dataset.deleteUser) {
+      const username = target.dataset.username
+      const typed = window.prompt(`此操作不可恢复，将永久删除用户「${username}」及其同步数据、设备与一起听房间成员身份。\n\n请输入用户名 ${username} 以确认删除：`)
+      if (typed !== username) {
+        if (typed != null) message('用户名不匹配，已取消删除')
+        return
+      }
+      await api(`/api/admin/users/${target.dataset.deleteUser}`, { method: 'DELETE' })
+      await loadUsers()
+      message('用户已删除')
     } else if (target.dataset.toggleUser) {
       await api(`/api/admin/users/${target.dataset.toggleUser}`, { method: 'PATCH', body: JSON.stringify({ status: target.dataset.status }) })
       await loadUsers()

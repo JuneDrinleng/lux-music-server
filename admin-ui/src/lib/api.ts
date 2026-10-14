@@ -67,6 +67,7 @@ export const adminApi = {
   users: () => request<{ users: UserView[] }>('/api/admin/users'),
   createUser: (body: { username: string, password: string, displayName?: string, role: Role }) => request<{ user: PublicUser }>('/api/admin/users', { method: 'POST', body: jsonBody(body) }),
   updateUser: (id: string, body: { status?: UserStatus }) => request<{ user: PublicUser }>(`/api/admin/users/${id}`, { method: 'PATCH', body: jsonBody(body) }),
+  deleteUser: (id: string) => request<{ ok: boolean }>(`/api/admin/users/${id}`, { method: 'DELETE' }),
   revealUserSyncCode: (id: string) => request<{ syncCode: string }>(`/api/admin/users/${id}/sync-code`),
   resetUserSyncCode: (id: string) => request<{ syncCode: string }>(`/api/admin/users/${id}/sync-code/reset`, { method: 'POST' }),
   userDevices: (id: string) => request<{ devices: Device[] }>(`/api/admin/users/${id}/devices`),

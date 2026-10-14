@@ -340,6 +340,34 @@ export class AccountStore {
     return true
   }
 
+  deleteManagedUser(userId: string) {
+    const user = this.findManagedUserById(userId)
+    if (!user) throw new Error('User not found')
+    if (user.role == 'admin' && user.status == 'active') {
+      const otherActiveAdmins = this.data.users.filter(
+        candidate => candidate.role == 'admin' && candidate.status == 'active' && candidate.id != userId,
+      ).length
+      if (otherActiveAdmins == 0) throw new Error('Cannot delete the last admin')
+    }
+
+    const username = user.username
+    this.data.invites = this.data.invites.filter(invite => {
+      if (invite.createdBy == userId) return false
+      invite.usedBy = invite.usedBy.filter(entry => entry.userId != userId)
+      return true
+    })
+
+    const index = this.data.users.findIndex(candidate => candidate.id == userId)
+    if (index < 0) throw new Error('User not found')
+    this.data.users.splice(index, 1)
+    this.saveSync()
+
+    const userDir = path.join(global.lx.userPath, getUserDirname(username))
+    if (fs.existsSync(userDir)) fs.rmSync(userDir, { recursive: true, force: true })
+
+    return { username }
+  }
+
   async registerByInvite({
     code,
     username,
