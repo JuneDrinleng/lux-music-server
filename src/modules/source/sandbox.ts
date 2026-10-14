@@ -73,6 +73,8 @@ export class ScriptSandboxHost {
   private allowAutoRestart = true
   /** Set when the worker posts type:error (uncaught/unhandled); survives exit/restart formatting. */
   private lastWorkerFatalError: string | null = null
+  /** When status last became `ready`; used to avoid 500ms heartbeat killing post-inited bootstrap. */
+  private readySince: number | null = null
   private initWait: { resolve: () => void, reject: (err: Error) => void, timer: NodeJS.Timeout } | null = null
   private logLines: string[] = []
   readonly id: string
@@ -97,6 +99,8 @@ export class ScriptSandboxHost {
   }
 
   private setView(patch: Partial<SourceScriptView>) {
+    if (patch.status == 'ready') this.readySince = Date.now()
+    else if (patch.status == 'disabled' || patch.status == 'error' || patch.status == 'initializing') this.readySince = null
     this.view = { ...this.view, ...patch }
     this.onStateChange()
   }
@@ -153,6 +157,9 @@ export class ScriptSandboxHost {
   private heartbeatStuckMs(settings: ReturnType<typeof getSourceSettings>) {
     if (this.view.status == 'initializing') return settings.timeoutMs
     if (this.pendingHttp.size > 0) return settings.timeoutMs
+    if (this.view.status == 'ready' && this.readySince != null && Date.now() - this.readySince < settings.timeoutMs) {
+      return settings.timeoutMs
+    }
     return 500
   }
 
