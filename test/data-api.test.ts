@@ -89,7 +89,10 @@ describe('PAT HTTP data API', { concurrency: false, timeout: 25000 }, () => {
     assert.equal((await request(pat.token, `/api/v1/playlists/${id}/songs`, 'POST', { songs: [], position: 'middle' })).status, 400)
     for (let i = 0; i < 100; i++) {
       const file = manage.snapshotDataManage.snapshotInfoFilePath
-      if (fs.existsSync(file) && JSON.parse(fs.readFileSync(file, 'utf8')).latest == await manage.getCurrentListInfoKey()) break
+      // The snapshot info file may be observed mid-write; treat unparsable content as not ready yet.
+      let latest: unknown
+      try { latest = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).latest : undefined } catch { latest = undefined }
+      if (latest !== undefined && latest == await manage.getCurrentListInfoKey()) break
       await setTimeout(10)
     }
     releaseUserSpace(fixture.users.host.username, true)
