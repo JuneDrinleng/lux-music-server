@@ -9,6 +9,7 @@ import type { FastifyInstance } from 'fastify'
 import { getAccountStore } from '../src/account/store'
 import { File, SYNC_CODE } from '../src/constants'
 import { authConnect } from '../src/server/auth'
+import { getServerStatus, setServerStatus } from '../src/server/status'
 import { getUserDirname, getUserName, getUserSpace, releaseUserSpace, UserDataManage } from '../src/user'
 import { toMD5 } from '../src/utils'
 import { aesDecrypt, aesEncrypt, rsaDecrypt } from '../src/utils/tools'
@@ -61,10 +62,10 @@ describe('device identity', () => {
     return parseJson(result.body).token as string
   }
 
-  const createUser = async() => {
+  const createUser = async(role: 'admin' | 'user' = 'admin') => {
     const username = `devices-${++userNumber}`
     users.push(username)
-    const user = await getAccountStore().createUser({ username, password: 'device-test-password', role: 'admin' })
+    const user = await getAccountStore().createUser({ username, password: 'device-test-password', role })
     return { ...user, token: await login(username) }
   }
 
@@ -82,7 +83,7 @@ describe('device identity', () => {
       headers: { authorization: `Bearer ${token}` },
     })
     assert.equal(result.statusCode, 200, result.body)
-    return parseJson(result.body).devices as LX.Sync.KeyInfo[]
+    return parseJson(result.body).devices as Array<Pick<LX.Sync.KeyInfo, 'clientId' | 'deviceName' | 'isMobile' | 'lastConnectDate' | 'lastSeen' | 'deviceId'>>
   }
 
   const authorizeByCode = async(username: string, deviceName: string, options: { deviceId?: string, publicKey?: string } = {}) => {
@@ -106,6 +107,77 @@ describe('device identity', () => {
     fs.writeFileSync(file, JSON.stringify({ userName: username, clients: Object.fromEntries(clients.map(client => [client.clientId, client])) }))
     return { userDir, file }
   }
+
+  it('only exposes public device metadata in self, admin and online status listings', async() => {
+    const admin = await createUser()
+    const user = await createUser('user')
+    const clients = [
+      storedClient('public-old', { deviceId: 'public-install', lastSeen: 10 }),
+      {
+        ...storedClient('public-current', {
+          deviceId: 'public-install', deviceName: 'Current phone', isMobile: false,
+          lastConnectDate: 200, lastSeen: 220, publicKeyHash: 'secret-public-key-hash',
+        }),
+        publicKey: 'secret-public-key',
+        privateKey: 'secret-private-key',
+        clientAliases: [{ key: 'secret-nested-alias-key' }],
+        futureSecret: 'secret-future-field',
+      },
+      storedClient('public-legacy'),
+    ]
+    const { file } = seedDevices(user.username, clients)
+    const space = getUserSpace(user.username)
+    assert.equal(space.dataManage.getDeviceClientIds('public-current').length, 2)
+    const persisted = fs.readFileSync(file, 'utf8')
+    const previousStatus = getServerStatus()
+    setServerStatus({ ...previousStatus, devices: space.dataManage.getAllClientKeyInfo() })
+    const expected = [
+      {
+        clientId: 'public-current', deviceName: 'Current phone', isMobile: false,
+        lastConnectDate: 200, lastSeen: 220, deviceId: 'public-install',
+      },
+      { clientId: 'public-legacy', deviceName: 'Same phone model', isMobile: true, lastConnectDate: 100 },
+    ]
+    const secrets = [
+      ...clients.map(client => client.key), 'secret-public-key-hash', 'secret-public-key',
+      'secret-private-key', 'secret-nested-alias-key', 'secret-future-field',
+    ]
+    const secretFields = new Set(['key', 'publicKey', 'publicKeyHash', 'privateKey', 'clientAliases', 'futureSecret'])
+    const assertNoSecrets = (value: unknown) => {
+      if (value == null || typeof value != 'object') return
+      for (const [field, child] of Object.entries(value)) {
+        assert.equal(secretFields.has(field), false, `Unexpected secret field: ${field}`)
+        assertNoSecrets(child)
+      }
+    }
+    try {
+      for (const [url, token] of [
+        ['/api/me/devices', user.token],
+        [`/api/admin/users/${user.id}/devices`, admin.token],
+        ['/api/admin/status', admin.token],
+      ]) {
+        const result = await app.inject({ method: 'GET', url, headers: { authorization: `Bearer ${token}` } })
+        assert.equal(result.statusCode, 200, result.body)
+        const body = parseJson(result.body)
+        assertNoSecrets(body)
+        for (const secret of secrets) assert.equal(result.body.includes(secret), false, `${url} leaked a secret value`)
+        const isStatus = url == '/api/admin/status'
+        const listed = isStatus ? body.status.devices : body.devices
+        const expectedDevices = isStatus ? expected.map(device => ({ ...device, userName: user.username })) : expected
+        assert.deepEqual(listed, expectedDevices)
+        for (const [index, device] of listed.entries()) {
+          assert.deepEqual(Object.keys(device).sort(), Object.keys(expectedDevices[index]).sort())
+        }
+      }
+      assert.equal(fs.readFileSync(file, 'utf8'), persisted)
+      for (const client of clients) {
+        assert.equal(space.dataManage.getClientKeyInfo(client.clientId)?.key, client.key)
+        await assert.doesNotReject(authConnect(connectRequest(client.clientId, client.key)))
+      }
+    } finally {
+      setServerStatus(previousStatus)
+    }
+  })
 
   it('reuses one device across concurrent issuance, token rotation, rename and reload', async() => {
     const user = await createUser()
@@ -313,7 +385,6 @@ describe('device identity', () => {
     const visible = await devices(user.token)
     assert.equal(visible.length, 7)
     assert.equal(visible.find(client => client.deviceId == 'same-install')?.deviceName, 'Alias reconnect')
-    assert.equal(visible.find(client => client.deviceId == 'same-install')?.publicKeyHash, 'current-fingerprint')
     releaseUserSpace(user.username, true)
     const restarted = getUserSpace(user.username).dataManage
     assert.equal(restarted.getAllClientKeyInfo().find(client => client.deviceId == 'same-install')?.publicKeyHash, 'current-fingerprint')
