@@ -12,6 +12,13 @@ errors are unchanged. Rate limiting now uses HTTP 429 instead of 403.
 | `INVALID_CURRENT_PASSWORD` | 403 | Incorrect old password during password change |
 | `RATE_LIMITED` | 429 | Existing IP/account auth failure limit reached |
 | `INVALID_REQUEST` | 400 | Invalid request body or rejected input |
+| `INVALID_DISPLAY_NAME` | 400 | Profile displayName is not a string or exceeds 100 characters |
+| `INVALID_AVATAR` | 400 | Profile avatar is not a string |
+| `AVATAR_TOO_LARGE` | 413 | Profile avatar exceeds 200 × 1024 characters |
+| `INVALID_SIGNATURE` | 400 | Profile signature is not a string or exceeds 140 characters |
+| `INVALID_GENDER` | 400 | Profile gender is not male, female or unknown (empty clears to unknown) |
+| `USERNAME_READONLY` | 400 | Profile request includes read-only username; edit displayName instead |
+| `PROFILE_SAVE_FAILED` | 500 | Profile persistence failed |
 | `MISSING_FIELDS` | 400 | Required fields are absent or empty |
 | `NOT_FOUND` | 404 | API route or requested resource does not exist |
 | `SESSION_NOT_FOUND` | 404 | Session is absent or belongs to another user |
@@ -32,3 +39,11 @@ use `INVALID_REQUEST`. Invite registration retains its existing HTTP 400 errors
 and adds the same invite codes used by the check endpoint. Successful invite
 checks do not consume uses or reset accumulated failures. Failures share the
 existing auth IP limiter; registration also retains account-based limiting.
+
+Profile GET/POST/PATCH responses retain `{ profile: { displayName, avatar, gender,
+signature } }` and add read-only `username`. POST/PATCH trim supplied strings,
+ignore unknown fields, and validate all supplied fields before saving anything.
+Empty strings clear text fields; empty gender resets to `unknown`. Omitted fields
+stay unchanged. Avatar strings (including mobile data URLs) retain their existing
+format compatibility; oversized avatars are rejected instead of truncated.
+The global request body limit still applies before profile validation.

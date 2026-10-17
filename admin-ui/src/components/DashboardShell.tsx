@@ -141,7 +141,7 @@ export function DashboardShell({
             <b>{displayName}</b>
             <span>{me.username} · {roleLabel(me.role)}</span>
           </div>
-          <button type="button" className="lux-out" title="退出登录" onClick={onLogout}>
+          <button type="button" className="lux-out" title="退出登录（会让此账号在所有浏览器的后台登录失效）" onClick={onLogout}>
             <IconLogout />
           </button>
         </div>
