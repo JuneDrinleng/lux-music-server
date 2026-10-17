@@ -124,12 +124,27 @@ describe('sync key session lifecycle', { concurrency: false, timeout: 15000 }, (
   })
 
   it('password change deletes both key types', async() => {
-    const response = await post('/api/me/password', { oldPassword: 'secret-pass', password: 'new-pass', revokeOtherDevices: false })
+    const response = await post('/api/me/password', { oldPassword: 'secret-pass', password: 'new-pass' })
     assert.equal(response.statusCode, 200, response.body)
     for (const key of [bound, legacy]) {
       assert.equal(stored(key), null)
       await authenticate(key, false)
     }
+  })
+
+  it('keeping other devices only deletes the current session keys', async() => {
+    const other = parseJson((await post('/api/auth/login', { username, password: 'secret-pass', deviceId: 'tablet' })).body)
+    const otherKey = await issue(other.accessToken)
+    const response = await post('/api/me/password', {
+      oldPassword: 'secret-pass', password: 'new-pass', revokeOtherDevices: false,
+    }, login.accessToken)
+    assert.equal(response.statusCode, 200, response.body)
+    assert.equal(stored(bound), null)
+    await authenticate(bound, false)
+    await authenticate(otherKey, true)
+    await authenticate(legacy, true)
+    const replacementKey = await issue(parseJson(response.body).accessToken)
+    await authenticate(replacementKey, true)
   })
 
   it('disable deletes all keys and re-enable cannot restore them', async() => {

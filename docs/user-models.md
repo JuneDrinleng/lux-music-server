@@ -33,8 +33,9 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 - **登录密码**：只存在于 `loginPasswordHash`，用于 `POST /api/auth/login`。
 - **连接码（lxSyncCode）**：投影为 `config.users[].password`，用于 LX 客户端 `/ah`。
 - 管理台「查看/重置连接码」改的是 `lxSyncCode`，不会改登录密码。
-- 改登录密码会 `sessionVersion++`，使已有 JWT 失效；重置连接码只影响同步鉴权。
-- 自助修改密码（`POST /api/me/password`）需提交 `oldPassword` 和新 `password`；成功后返回 `{ ok: true, token, user }`，Web 管理台保存新 token 以保持当前登录。可选的 `revokeOtherDevices` 必须是布尔值；该字段仅为兼容保留，修改密码始终撤销该账号全部会话和同步设备密钥（不论此字段的值）。
+- 默认改登录密码会 `sessionVersion++`，使已有 JWT 失效；自助改密可选择保留其他设备会话。重置连接码只影响同步鉴权。
+- 自助修改密码（`POST /api/me/password`）接收 `{ oldPassword, password, revokeOtherDevices?: boolean }`，先验证旧密码（错误返回 403 `INVALID_CURRENT_PASSWORD`）。成功返回 `{ ok: true, token, accessToken, accessTokenExpiresAt, sessionId, refreshToken, user }`，用户字段与登录相同；Web 管理台仍可保存 `token`。始终撤销当前会话及其刷新令牌、绑定同步密钥，再为当前设备签发新会话并保留设备信息。
+- `revokeOtherDevices` 省略或为 `true` 时，提升 `sessionVersion`，撤销其他全部会话、刷新令牌和同步密钥；新返回的令牌在提升版本后签发，保持有效。为 `false` 时，不提升版本，其他会话、刷新令牌和同步密钥保持有效。非布尔值返回 400 `INVALID_REQUEST`。无 `sid` 的旧 token 配合 `false` 返回 400 `SESSION_REQUIRED`，不改动密码或会话，需重新登录后使用 accessToken；旧 token 配合省略或 `true` 仍可改密，并获得新可续期会话。
 
 对仅存在于 `config.js` / `LX_USER_*` 的遗留用户：
 
@@ -55,7 +56,7 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 - `POST /api/auth/refresh` 接收 `{ refreshToken }`，返回新的 `accessToken`、`refreshToken`、`accessTokenExpiresAt`、`sessionId`。刷新令牌为不透明随机值，默认有效 90 天，每次刷新滑动续期。刷新会更新 `lastActiveAt`，旧刷新令牌立即失效。
 - 每个会话是一条刷新令牌家族，保存 generation 和已轮换令牌的 SHA-256 哈希用于重放检测。重用已轮换令牌会撤销整个会话，连同该家族最新的刷新令牌也失效。未知、过期、已撤销或重放返回 401；沿用按 IP 的失败次数限制（达到限制后 429 `RATE_LIMITED`）。客户端应串行刷新并及时保存新令牌。
 - 携带 `sid` 的令牌调用 `POST /api/auth/logout` 只撤销当前会话；旧令牌登出仍提升 `sessionVersion`，使该账号全部 JWT 失效，同时撤销全部刷新会话。
-- 修改密码（包括管理员重置）或禁用账号会撤销全部会话；禁用也提升 `sessionVersion`。重新启用后需重新登录创建会话。自助改密仍返回替换用的旧格式 `token`。
+- 默认自助改密、管理员重置密码或禁用账号会撤销全部会话并提升 `sessionVersion`；自助改密传 `revokeOtherDevices: false` 只替换当前会话。管理员重置行为不变。禁用后重新启用需重新登录创建会话。
 - 会话保存到 `DATA_PATH/lux/sessions.json`（与 `accounts.json` 同目录），只存刷新令牌哈希，不存原文。沿用原子写入和损坏/不可读文件备份后拒绝启动策略；临时文件不参与恢复。保存时清理撤销超过 30 天或过期超过 30 天的会话。会话自助管理 API 见下文；同步设备密钥生命周期见下表。
 
 ### 会话自助管理（PR 2.3）
@@ -75,7 +76,8 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 | `/ah` 密钥认证、WS upgrade / 建连 | 会话须存在、未撤销且未过期，否则按未知密钥拒绝 | 保持可用，每个 clientId 每进程只警告一次，不记录密钥 |
 | sid 登出、刷新令牌重放、相同 deviceId 重新登录、直接撤销会话 | 删除该会话的密钥，立即断开对应同步连接 | 保持可用 |
 | 旧 token 登出 | 撤销全部会话，删除其绑定密钥并断开对应连接 | 保持可用 |
-| 自助改密 / 管理员重置密码 | 全部删除并断开该用户全部同步连接 | 全部删除并断开该用户全部同步连接 |
+| 自助改密（省略 / true）/ 管理员重置密码 | 全部删除并断开该用户全部同步连接 | 全部删除并断开该用户全部同步连接 |
+| 自助改密（false，须有 sid）| 仅删除当前会话的密钥并断开对应连接，其他会话保留 | 保持可用 |
 | 禁用账号 | 全部删除并断开该用户全部同步连接 | 全部删除并断开该用户全部同步连接 |
 | 重新启用账号 | 不恢复已删除密钥；旧 token 仍因 sessionVersion 失效 | 不恢复已删除密钥 |
 | 自助 / 管理员重置连接码 | 保持可用 | 全部删除并断开对应同步连接 |

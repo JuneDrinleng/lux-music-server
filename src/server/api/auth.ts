@@ -34,7 +34,7 @@ const accessCredentials = (user: LuxManagedUser, sessionId: string) => {
   return { accessToken, accessTokenExpiresAt: issuedAt + ttlMs, sessionId }
 }
 
-const loginCredentials = (user: LuxManagedUser, body: Record<string, unknown>) => {
+export const loginCredentials = (user: LuxManagedUser, body: Record<string, unknown>) => {
   const store = getAccountStore()
   const token = createToken({
     userId: user.id,
