@@ -6,6 +6,7 @@ import { disconnectUserSessions, removeDevice } from '../server'
 import { getServerStatus } from '../status'
 import { getRequiredAuthUser, requireAdmin, type AuthRequest } from './authGuard'
 import { getNumber, getOptionalString, getString, isRecord, toPublicDevice } from './utils'
+import { sendError } from './errors'
 
 const getRole = (value: unknown): 'admin' | 'user' | undefined => {
   if (typeof value != 'string') return undefined
@@ -44,33 +45,31 @@ export const registerAdminApi = async(app: FastifyInstance) => {
   }))
 
   app.post('/api/admin/users', { preHandler: requireAdmin }, async(request, reply) => {
-    if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+    if (!isRecord(request.body)) return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid body')
     const username = getString(request.body.username)
     const password = getString(request.body.password)
     const displayName = getOptionalString(request.body.displayName)
     const role = request.body.role == 'admin' ? 'admin' : 'user'
-    if (!username || !password) return reply.code(400).send({ message: 'Missing required fields' })
+    if (!username || !password) return sendError(reply, 400, 'MISSING_FIELDS', 'Missing required fields')
     try {
       const user = await getAccountStore().createUser({ username, password, displayName, role })
       return { user }
     } catch (err: any) {
-      return reply.code(400).send({ message: err.message })
+      return sendError(reply, 400, 'INVALID_REQUEST', err.message)
     }
   })
 
   app.delete('/api/admin/users/:id', { preHandler: requireAdmin }, async(request: AuthRequest, reply) => {
     const id = (request.params as { id?: string }).id
-    if (!id) return reply.code(400).send({ message: 'Missing user id' })
+    if (!id) return sendError(reply, 400, 'MISSING_FIELDS', 'Missing user id')
     if (id.startsWith('config:')) {
       const username = id.slice('config:'.length) || 'user'
-      return reply.code(400).send({
-        message: `User "${username}" is defined by server config or environment (LX_USER_* / config.js). Remove that definition and restart the server; it cannot be deleted from the admin console.`,
-      })
+      return sendError(reply, 400, 'INVALID_REQUEST', `User "${username}" is defined by server config or environment (LX_USER_* / config.js). Remove that definition and restart the server; it cannot be deleted from the admin console.`)
     }
     const actor = getRequiredAuthUser(request)
-    if (actor.id == id) return reply.code(400).send({ message: 'Cannot delete yourself' })
+    if (actor.id == id) return sendError(reply, 400, 'INVALID_REQUEST', 'Cannot delete yourself')
     const target = getAccountStore().findManagedUserById(id)
-    if (!target) return reply.code(404).send({ message: 'User not found' })
+    if (!target) return sendError(reply, 404, 'USER_NOT_FOUND', 'User not found')
     try {
       disconnectUserSessions(target.username)
       getRoomManager().evictUser(id)
@@ -79,15 +78,15 @@ export const registerAdminApi = async(app: FastifyInstance) => {
       return { ok: true }
     } catch (err: any) {
       const message = err?.message ?? 'Delete failed'
-      if (message == 'Cannot delete the last admin') return reply.code(400).send({ message })
-      return reply.code(404).send({ message })
+      if (message == 'Cannot delete the last admin') return sendError(reply, 400, 'LAST_ADMIN', message)
+      return sendError(reply, 404, 'USER_NOT_FOUND', message)
     }
   })
 
   app.patch('/api/admin/users/:id', { preHandler: requireAdmin }, async(request: AuthRequest, reply) => {
-    if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+    if (!isRecord(request.body)) return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid body')
     const id = (request.params as { id?: string }).id
-    if (!id) return reply.code(400).send({ message: 'Missing user id' })
+    if (!id) return sendError(reply, 400, 'MISSING_FIELDS', 'Missing user id')
     try {
       const user = getAccountStore().updateUser(id, {
         displayName: getOptionalString(request.body.displayName),
@@ -103,59 +102,59 @@ export const registerAdminApi = async(app: FastifyInstance) => {
       return { user }
     } catch (err: any) {
       if (err.message == 'Cannot disable or demote yourself' || err.message == 'Cannot disable or demote the last active admin') {
-        return reply.code(409).send({ message: err.message })
+        return sendError(reply, 409, err.message == 'Cannot disable or demote yourself' ? 'SELF_DEMOTE' : 'LAST_ADMIN', err.message)
       }
-      return reply.code(404).send({ message: err.message })
+      return sendError(reply, 404, 'USER_NOT_FOUND', err.message)
     }
   })
 
   app.post('/api/admin/users/:id/password/reset', { preHandler: requireAdmin }, async(request, reply) => {
-    if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+    if (!isRecord(request.body)) return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid body')
     const id = (request.params as { id?: string }).id
     const password = getString(request.body.password)
-    if (!id || !password) return reply.code(400).send({ message: 'Missing required fields' })
+    if (!id || !password) return sendError(reply, 400, 'MISSING_FIELDS', 'Missing required fields')
     try {
       const user = await getAccountStore().changePassword(id, password)
       return { user }
     } catch (err: any) {
-      return reply.code(404).send({ message: err.message })
+      return sendError(reply, 404, 'USER_NOT_FOUND', err.message)
     }
   })
 
   app.get('/api/admin/users/:id/sync-code', { preHandler: requireAdmin }, async(request, reply) => {
     const id = (request.params as { id?: string }).id
-    if (!id) return reply.code(400).send({ message: 'Missing user id' })
+    if (!id) return sendError(reply, 400, 'MISSING_FIELDS', 'Missing user id')
     try {
       const syncCode = getAccountStore().getSyncCode(id)
       reply.header('Cache-Control', 'no-store')
       return { syncCode }
     } catch (err: any) {
-      return reply.code(404).send({ message: err.message })
+      return sendError(reply, 404, 'USER_NOT_FOUND', err.message)
     }
   })
 
   app.post('/api/admin/users/:id/sync-code/reset', { preHandler: requireAdmin }, async(request, reply) => {
     const id = (request.params as { id?: string }).id
-    if (!id) return reply.code(400).send({ message: 'Missing user id' })
+    if (!id) return sendError(reply, 400, 'MISSING_FIELDS', 'Missing user id')
     try {
       const syncCode = getAccountStore().resetSyncCode(id)
       return { syncCode }
     } catch (err: any) {
-      return reply.code(404).send({ message: err.message })
+      return sendError(reply, 404, 'USER_NOT_FOUND', err.message)
     }
   })
 
   app.get('/api/admin/users/:id/devices', { preHandler: requireAdmin }, async(request, reply) => {
     const id = (request.params as { id?: string }).id
     const user = id ? getAccountStore().findManagedUserById(id) : null
-    if (!user) return reply.code(404).send({ message: 'User not found' })
+    if (!user) return sendError(reply, 404, 'USER_NOT_FOUND', 'User not found')
     return { devices: (await getUserSpace(user.username).getDecices()).map(toPublicDevice) }
   })
 
   app.delete('/api/admin/users/:id/devices/:clientId', { preHandler: requireAdmin }, async(request, reply) => {
     const { id, clientId } = request.params as { id?: string, clientId?: string }
     const user = id ? getAccountStore().findManagedUserById(id) : null
-    if (!user || !clientId) return reply.code(404).send({ message: 'User or device not found' })
+    if (!user || !clientId) return sendError(reply, 404, 'NOT_FOUND', 'User or device not found')
     await removeDevice(user.username, clientId)
     return { ok: true }
   })
@@ -165,7 +164,7 @@ export const registerAdminApi = async(app: FastifyInstance) => {
   }))
 
   app.post('/api/admin/invites', { preHandler: requireAdmin }, async(request: AuthRequest, reply) => {
-    if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+    if (!isRecord(request.body)) return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid body')
     const user = getRequiredAuthUser(request)
     const maxUses = getNumber(request.body.maxUses) ?? 1
     const expiresAt = getNumber(request.body.expiresAt)
@@ -176,9 +175,9 @@ export const registerAdminApi = async(app: FastifyInstance) => {
   })
 
   app.patch('/api/admin/invites/:id', { preHandler: requireAdmin }, async(request, reply) => {
-    if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+    if (!isRecord(request.body)) return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid body')
     const id = (request.params as { id?: string }).id
-    if (!id) return reply.code(400).send({ message: 'Missing invite id' })
+    if (!id) return sendError(reply, 400, 'MISSING_FIELDS', 'Missing invite id')
     try {
       const invite = getAccountStore().updateInvite(id, {
         disabled: typeof request.body.disabled == 'boolean' ? request.body.disabled : undefined,
@@ -188,7 +187,7 @@ export const registerAdminApi = async(app: FastifyInstance) => {
       })
       return { invite }
     } catch (err: any) {
-      return reply.code(404).send({ message: err.message })
+      return sendError(reply, 404, 'INVITE_NOT_FOUND', err.message)
     }
   })
 

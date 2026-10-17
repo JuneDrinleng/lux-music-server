@@ -134,7 +134,7 @@ describe('auth api', () => {
       headers: { 'content-type': 'application/json' },
       payload: { username: 'bob', password: 'correct-horse' },
     })
-    assert.equal(blocked.statusCode, 403)
+    assert.equal(blocked.statusCode, 429)
   })
 
   it('rate-limits register failures by username', async() => {
@@ -164,6 +164,6 @@ describe('auth api', () => {
         password: 'password123',
       },
     })
-    assert.equal(blocked.statusCode, 403)
+    assert.equal(blocked.statusCode, 429)
   })
 })

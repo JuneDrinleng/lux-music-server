@@ -12,6 +12,7 @@ import { registerAuthApi } from './api/auth'
 import { registerMeApi } from './api/me'
 import { registerSyncApi } from './api/sync'
 import { registerTogetherApi } from './api/together'
+import { sendError } from './api/errors'
 
 const readServerPackageVersion = () => {
   try {
@@ -90,10 +91,7 @@ export const createApp = (): FastifyInstance => {
     const statusCode = error.statusCode ?? 500
     const message = error.message || 'Internal Server Error'
     if (request.url.startsWith('/api/')) {
-      void reply.code(statusCode).send({
-        message,
-        code: 'code' in error && typeof error.code == 'string' ? error.code : undefined,
-      })
+      void sendError(reply, statusCode, error.code || (statusCode >= 500 ? 'INTERNAL_ERROR' : 'INVALID_REQUEST'), message)
       return
     }
     void reply.code(statusCode).type('text/plain; charset=utf-8').send(message)
@@ -110,6 +108,18 @@ export const createApp = (): FastifyInstance => {
   app.get('/ah', async(request: FastifyRequest, reply: FastifyReply) => {
     reply.hijack()
     await authCode(request.raw, reply.raw, lx.config.users)
+  })
+
+  app.get('/api/server-info', async(_request, reply) => {
+    reply.header('Cache-Control', 'no-store')
+    return {
+      name: lx.config.serverName,
+      version: process.env.LUX_VERSION?.trim() || SERVER_PACKAGE_VERSION,
+      packageVersion: SERVER_PACKAGE_VERSION,
+      minClientVersion: process.env.LUX_MIN_CLIENT_VERSION?.trim() || null,
+      registration: { inviteOnly: true, enabled: true },
+      features: ['sessions', 'refresh', 'me-sessions', 'invite-check'],
+    }
   })
 
   app.get('/api/health', async() => ({
@@ -140,7 +150,7 @@ export const createApp = (): FastifyInstance => {
 
   app.setNotFoundHandler(async(request, reply) => {
     if (request.url.startsWith('/api/')) {
-      return reply.code(404).send({ message: 'API route not found' })
+      return sendError(reply, 404, 'NOT_FOUND', 'API route not found')
     }
     sendText(reply, 401, 'Forbidden')
   })

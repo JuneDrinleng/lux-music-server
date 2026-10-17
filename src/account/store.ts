@@ -15,6 +15,12 @@ const createSyncCode = () => randomBytes(18).toString('base64url')
 const getUserDirname = (userName: string) => `${filterFileName(userName)}_${toMD5(userName).substring(0, 6)}`
 export const hashInviteCode = (code: string) => createHash('sha256').update(code).digest('hex')
 
+export class InviteValidationError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message)
+  }
+}
+
 const createEmptyStore = (): LuxAccountStoreData => ({
   version: 1,
   tokenSecret: process.env.LUX_TOKEN_SECRET || createSecret(),
@@ -437,6 +443,15 @@ export class AccountStore {
     return { username }
   }
 
+  checkInvite(code: string) {
+    const invite = this.data.invites.find(invite => invite.codeHash == hashInviteCode(code))
+    if (!invite) throw new InviteValidationError('INVITE_NOT_FOUND', 'Invite code invalid')
+    if (invite.disabled) throw new InviteValidationError('INVITE_DISABLED', 'Invite code invalid')
+    if (invite.expiresAt !== undefined && invite.expiresAt <= now()) throw new InviteValidationError('INVITE_EXPIRED', 'Invite code expired')
+    if (invite.usedCount >= invite.maxUses) throw new InviteValidationError('INVITE_USED_UP', 'Invite code used up')
+    return invite
+  }
+
   async registerByInvite({
     code,
     username,
@@ -448,15 +463,18 @@ export class AccountStore {
     password: string
     displayName?: string
   }) {
-    const invite = this.data.invites.find(invite => invite.codeHash == hashInviteCode(code))
-    if (!invite || invite.disabled) throw new Error('Invite code invalid')
-    if (invite.expiresAt && invite.expiresAt < now()) throw new Error('Invite code expired')
-    if (invite.usedCount >= invite.maxUses) throw new Error('Invite code used up')
-    const user = await this.createUser({ username, password, role: invite.role, displayName })
+    this.checkInvite(code)
+    const passwordHash = await hashPassword(password)
+    // Revalidate after hashing: no await between validation, user creation and consumption.
+    const invite = this.checkInvite(code)
+    if (this.findManagedUserByUsername(username) || this.getConfigOriginUsers().some(user => user.name == username)) {
+      throw new Error('User name already exists')
+    }
+    const user = this.createManagedUserSync({ username, passwordHash, role: invite.role, displayName })
     invite.usedCount += 1
     invite.usedBy.push({ userId: user.id, username: user.username, usedAt: now() })
     this.saveSync()
-    return user
+    return sanitizeUser(user)
   }
 }
 
