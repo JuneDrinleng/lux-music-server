@@ -327,9 +327,20 @@ export class AccountStore {
     return user.lxSyncCode
   }
 
-  updateUser(userId: string, data: Partial<Pick<LuxManagedUser, 'displayName' | 'avatar' | 'gender' | 'signature' | 'role' | 'status' | 'maxSnapshotNum' | 'list.addMusicLocationType'>>) {
+  updateUser(userId: string, data: Partial<Pick<LuxManagedUser, 'displayName' | 'avatar' | 'gender' | 'signature' | 'role' | 'status' | 'maxSnapshotNum' | 'list.addMusicLocationType'>>, actorId?: string) {
     const user = this.findManagedUserById(userId)
     if (!user) throw new Error('User not found')
+    if (actorId == userId && user.role == 'admin' && (data.status == 'disabled' || data.role == 'user')) {
+      throw new Error('Cannot disable or demote yourself')
+    }
+    if (user.role == 'admin' && user.status == 'active' && (data.status == 'disabled' || data.role == 'user')) {
+      // Login/admin auth uses active managed accounts. LUX_ADMIN_* creates one;
+      // legacy config.js / LX_USER_* users only have sync access, never admin access.
+      const hasOtherActiveAdmin = this.data.users.some(
+        candidate => candidate.id != userId && candidate.role == 'admin' && candidate.status == 'active',
+      )
+      if (!hasOtherActiveAdmin) throw new Error('Cannot disable or demote the last active admin')
+    }
     if (data.displayName !== undefined) user.displayName = data.displayName
     if (data.avatar !== undefined) user.avatar = data.avatar
     if (data.gender !== undefined) user.gender = data.gender
