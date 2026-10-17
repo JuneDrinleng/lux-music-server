@@ -48,33 +48,102 @@ jobs:
         uses: actions/checkout@v7
 
       - name: Build image
-        run: docker build -t lux:ci .
+        run: docker build --build-arg VERSION=0.0.0-ci -t lux:ci .
 
-      - name: Run and require /hello
+      - name: Verify OCI labels and version defaults
+        run: |
+          docker image inspect lux:ci > /tmp/lux-image.json
+          python3 - <<'PYTHON'
+          import json
+          image = json.load(open('/tmp/lux-image.json'))[0]['Config']
+          labels = image['Labels']
+          for key in ('title', 'description', 'source', 'url', 'version', 'revision', 'created', 'licenses'):
+              assert labels.get('org.opencontainers.image.' + key), key
+          assert labels['org.opencontainers.image.version'] == '0.0.0-ci'
+          assert labels['org.opencontainers.image.revision'] == 'unknown'
+          assert labels['org.opencontainers.image.licenses'] == 'Apache-2.0'
+          assert 'LUX_VERSION=0.0.0-ci' in image['Env']
+          PYTHON
+
+      - name: Run and require /hello, non-root process, and healthy status
         run: |
           set -euo pipefail
-          docker run -d --name lux-ci -p 9527:9527 -e LUX_TOKEN_SECRET=ci-only lux:ci
+          data_dir="$(mktemp -d)"
           cleanup() {
             status=$?
             if [ "$status" -ne 0 ]; then
               docker logs lux-ci || true
+              docker inspect lux-ci || true
             fi
-            docker rm -f lux-ci >/dev/null 2>&1 || true
+            docker rm -fv lux-ci >/dev/null 2>&1 || true
+            docker run --rm -v "$data_dir:/server/data" alpine sh -c 'rm -rf /server/data/*' || true
+            rmdir "$data_dir" || true
             exit "$status"
           }
           trap cleanup EXIT
-          ok=0
-          for _ in $(seq 1 30); do
-            body=$(curl -fsS http://127.0.0.1:9527/hello 2>/dev/null || true)
-            body=${body//$'\r'/}
-            body=${body%$'\n'}
-            if [ "$body" = 'Hello~::^-^::~v4~' ]; then
-              ok=1
-              break
+
+          # A real root-owned account store, including restrictive permissions.
+          docker run --rm -v "$data_dir:/server/data" alpine sh -c '
+            set -eu
+            mkdir -p /server/data/data/lux
+            echo "{\"version\":1,\"users\":[],\"invites\":[]}" > /server/data/data/lux/accounts.json
+            chmod 700 /server/data/data /server/data/data/lux
+            chmod 600 /server/data/data/lux/accounts.json
+            chown -R 0:0 /server/data
+            test "$(stat -c %u /server/data/data/lux/accounts.json)" = 0
+          '
+
+          for scenario in fresh root-owned; do
+            mount=()
+            if [ "$scenario" = root-owned ]; then
+              mount=(-v "$data_dir:/server/data")
             fi
-            sleep 1
+            docker run -d --name lux-ci -p 9527:9527 -e LUX_TOKEN_SECRET=ci-only "${mount[@]}" lux:ci
+            ok=0
+            for _ in $(seq 1 60); do
+              body=$(curl -fsS http://127.0.0.1:9527/hello 2>/dev/null || true)
+              body=${body//$'\r'/}
+              body=${body%$'\n'}
+              health=$(docker inspect --format '{{.State.Health.Status}}' lux-ci)
+              if [ "$body" = 'Hello~::^-^::~v4~' ] && [ "$health" = healthy ]; then
+                ok=1
+                break
+              fi
+              sleep 1
+            done
+            if [ "$ok" != 1 ]; then
+              echo "$scenario: /hello or health check failed within 60 seconds" >&2
+              exit 1
+            fi
+            # docker exec defaults to root; inspect the actual PID 1 server instead.
+            docker exec lux-ci sh -c '
+              set -eu
+              test "$(cat /proc/1/comm)" = node
+              test "$(awk "/^Uid:/ { print \$2 }" /proc/1/status)" = 1000
+              test "$(stat -c %u /server/data/data/lux/accounts.json)" = 1000
+              test -z "$(find /server/data ! -user node -o ! -group node)"
+            '
+            docker rm -fv lux-ci
           done
-          if [ "$ok" != 1 ]; then
-            echo "30 秒内 /hello 没有返回 Hello~::^-^::~v4~" >&2
-            exit 1
-          fi
+
+  docker-arm64:
+    name: Docker arm64 build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out git repository
+        uses: actions/checkout@v7
+
+      - uses: docker/setup-qemu-action@v4
+
+      - uses: docker/setup-buildx-action@v4
+
+      - name: Build arm64 image (no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha,scope=arm64
+          cache-to: type=gha,scope=arm64,mode=max

@@ -11,8 +11,24 @@ RUN npm run build \
 
 FROM node:24-alpine AS final
 
+ARG VERSION=
+ARG REVISION=unknown
+ARG CREATED=unknown
+
+LABEL org.opencontainers.image.title="Lux Music Sync Server" \
+  org.opencontainers.image.description="Lux Music data synchronization server" \
+  org.opencontainers.image.source="https://github.com/JuneDrinleng/lux-music-server" \
+  org.opencontainers.image.url="https://github.com/JuneDrinleng/lux-music-server" \
+  org.opencontainers.image.version="${VERSION}" \
+  org.opencontainers.image.revision="${REVISION}" \
+  org.opencontainers.image.created="${CREATED}" \
+  org.opencontainers.image.licenses="Apache-2.0"
+
+RUN apk add --no-cache su-exec
+
 WORKDIR /server
 
+ENV LUX_VERSION=${VERSION}
 ENV NODE_ENV=production
 ENV PORT=9527
 ENV BIND_IP=0.0.0.0
@@ -26,8 +42,6 @@ ENV LOG_PATH=/server/data/logs
 # 可选：启动时自动创建管理员（推荐 Docker 首次部署）。
 # ENV LUX_ADMIN_USER='admin'
 # ENV LUX_ADMIN_PASSWORD='change-me'
-# 可选：启动日志明文打印同步连接码（默认脱敏）。
-# ENV LUX_LOG_SYNC_CODES=0
 # 可选：反向代理真实 IP 请求头。
 # ENV PROXY_HEADER='x-real-ip'
 # 可选：配置兼容旧客户端协议的连接码用户。
@@ -42,7 +56,16 @@ COPY --from=builder /source-code/config.js ./config.js
 COPY --from=builder /source-code/index.js ./index.js
 COPY --from=builder /source-code/package.json ./package.json
 
+COPY --chmod=755 docker-entrypoint.sh /usr/local/bin/lux-entrypoint
+
+# Start as root to repair existing NAS volumes, then run as node (uid/gid 1000).
+# No PUID/PGID support; --user skips ownership repair.
+ENTRYPOINT ["lux-entrypoint"]
+
 VOLUME /server/data
 EXPOSE 9527
+
+HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --start-interval=2s --retries=3 \
+  CMD node -e 'const req = require("node:http").get({ host: "127.0.0.1", port: process.env.PORT || 9527, path: "/hello", timeout: 2000 }, res => { res.resume(); process.exit(res.statusCode === 200 ? 0 : 1) }); req.on("timeout", () => req.destroy()); req.on("error", () => process.exit(1))'
 
 CMD ["node", "index.js"]
