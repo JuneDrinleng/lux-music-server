@@ -15,6 +15,8 @@ describe('environment log redaction', () => {
       PASSWORD: '',
       PORT: '9527',
       DEBUG: '1',
+      LUX_TRUST_PROXY: '10.0.0.0/8',
+      LUX_PUBLIC_URL: 'https://lux.example.com',
       OPTIONAL: undefined,
     }
     const original = { ...env }
@@ -30,6 +32,8 @@ describe('environment log redaction', () => {
       PASSWORD: '***',
       PORT: '9527',
       DEBUG: '1',
+      LUX_TRUST_PROXY: '10.0.0.0/8',
+      LUX_PUBLIC_URL: 'https://lux.example.com',
       OPTIONAL: undefined,
     })
     assert.deepEqual(env, original)

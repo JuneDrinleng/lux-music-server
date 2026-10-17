@@ -39,6 +39,9 @@ jobs:
       - name: Test
         run: npm test
 
+      - name: Validate fnOS Compose
+        run: docker compose -f deploy/fnos/docker-compose.yml --env-file deploy/fnos/.env.example config -q
+
   docker-smoke:
     name: Docker image serves /hello
     runs-on: ubuntu-24.04

@@ -13,6 +13,7 @@ import { registerMeApi } from './api/me'
 import { registerSyncApi } from './api/sync'
 import { registerTogetherApi } from './api/together'
 import { sendError } from './api/errors'
+import { parsePublicUrl, parseTrustProxy } from './proxyConfig'
 
 const readServerPackageVersion = () => {
   try {
@@ -82,9 +83,11 @@ export const API_BODY_LIMIT = 256 * 1024
 
 export const createApp = (): FastifyInstance => {
   registerSyncKeyRevocation(getAccountStore())
+  const publicUrl = parsePublicUrl(process.env.LUX_PUBLIC_URL)
   const app = fastify({
     logger: false,
     bodyLimit: API_BODY_LIMIT,
+    trustProxy: parseTrustProxy(process.env.LUX_TRUST_PROXY),
   })
 
   app.setErrorHandler((error, request, reply) => {
@@ -117,6 +120,7 @@ export const createApp = (): FastifyInstance => {
       version: process.env.LUX_VERSION?.trim() || SERVER_PACKAGE_VERSION,
       packageVersion: SERVER_PACKAGE_VERSION,
       minClientVersion: process.env.LUX_MIN_CLIENT_VERSION?.trim() || null,
+      publicUrl,
       registration: { inviteOnly: true, enabled: true },
       features: ['sessions', 'refresh', 'me-sessions', 'invite-check'],
     }

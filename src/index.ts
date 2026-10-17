@@ -110,6 +110,9 @@ const margeConfig = (p: string) => {
 const p1 = path.join(__dirname, '../config.js')
 fs.existsSync(p1) && margeConfig(p1)
 envParams.CONFIG_PATH && fs.existsSync(envParams.CONFIG_PATH) && margeConfig(envParams.CONFIG_PATH)
+for (const key of ['LUX_TRUST_PROXY', 'LUX_PUBLIC_URL'] as const) {
+  if (envParams[key] !== undefined) process.env[key] = envParams[key]
+}
 if (envParams.PROXY_HEADER) {
   global.lx.config['proxy.enabled'] = true
   global.lx.config['proxy.header'] = envParams.PROXY_HEADER
