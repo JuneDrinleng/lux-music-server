@@ -1,5 +1,7 @@
 import crypto from 'node:crypto'
 import { getAccountStore } from '@/account/store'
+import { isSocketOpen } from '@/server/socketState'
+import { getUserSpace } from '@/user'
 import { broadcastRoom } from './broadcast'
 import { type Clock, createPingResult, systemClock } from './clock'
 import { TOGETHER_LIMITS, type TogetherConfig, readTogetherConfig } from './protocol'
@@ -24,6 +26,7 @@ export interface MemberAccount {
 }
 
 interface MemberEntry {
+  deviceId: string
   info: Member
   socket: LX.Socket | null
   graceTimer: unknown
@@ -49,6 +52,7 @@ export interface RoomManagerOptions {
   clock?: Clock
   /** Only active managed Lux accounts may use rooms; legacy `config.users` cannot. */
   getAccount?: (socket: LX.Socket) => MemberAccount | null
+  getDeviceClientId?: (socket: LX.Socket) => string
 }
 
 export interface TogetherStats {
@@ -87,14 +91,21 @@ export class RoomManager {
   readonly config: TogetherConfig
   private readonly clock: Clock
   private readonly getAccount: (socket: LX.Socket) => MemberAccount | null
+  private readonly getDeviceClientId: (socket: LX.Socket) => string
   private readonly rooms = new Map<string, Room>()
-  private readonly memberRooms = new Map<string, string>()
+  // Resolve credentials by device, while retaining the original public memberId
+  // for the lifetime of a membership (including host IDs and push payloads).
+  private readonly memberRooms = new Map<string, { code: string, memberId: string }>()
+  private readonly socketDeviceIds = new WeakMap<LX.Socket, string>()
   private readonly joinFailures = new Map<string, number[]>()
 
   constructor(options: RoomManagerOptions = {}) {
     this.config = { ...readTogetherConfig(), ...options.config }
     this.clock = options.clock ?? systemClock
     this.getAccount = options.getAccount ?? getManagedAccount
+    this.getDeviceClientId = options.getDeviceClientId ?? (socket => (
+      getUserSpace(socket.userInfo.name).dataManage.getDeviceClientId(socket.keyInfo.clientId)
+    ))
   }
 
   // ---- C→S methods ----
@@ -102,8 +113,9 @@ export class RoomManager {
   createRoom(socket: LX.Socket): Result<Snapshot> {
     const account = this.getAccount(socket)
     if (!account) return fail('NOT_LUX_ACCOUNT', 'Listen together requires an active Lux account')
+    const deviceId = this.getDeviceClientId(socket)
     const memberId = socket.keyInfo.clientId
-    if (this.memberRooms.has(memberId)) return fail('ALREADY_IN_ROOM', 'This device is already in a room')
+    if (this.memberRooms.has(deviceId)) return fail('ALREADY_IN_ROOM', 'This device is already in a room')
     if (this.rooms.size >= this.config.maxRooms) return fail('ROOM_LIMIT', 'The server has reached its room limit')
 
     const now = this.clock.now()
@@ -122,23 +134,24 @@ export class RoomManager {
       queue: { items: [], currentId: null },
       hostUpdates: [],
     }
-    room.members.set(memberId, this.createMemberEntry(socket, account, now))
+    room.members.set(memberId, this.createMemberEntry(socket, account, now, deviceId))
     this.rooms.set(code, room)
-    this.memberRooms.set(memberId, code)
+    this.memberRooms.set(deviceId, { code, memberId })
     return ok(this.snapshot(room))
   }
 
   joinRoom(socket: LX.Socket, req: unknown): Result<Snapshot> {
     const account = this.getAccount(socket)
     if (!account) return fail('NOT_LUX_ACCOUNT', 'Listen together requires an active Lux account')
+    const deviceId = this.getDeviceClientId(socket)
     const memberId = socket.keyInfo.clientId
     const now = this.clock.now()
-    let failures = this.joinFailures.get(memberId)
+    let failures = this.joinFailures.get(deviceId)
     if (failures && isLimited(failures, now, TOGETHER_LIMITS.joinFailures, TOGETHER_LIMITS.joinFailureWindowMs)) {
       return fail('RATE_LIMITED', 'Too many failed join attempts, try again later')
     }
     const recordFailure = <T>(result: Result<T>) => {
-      if (!failures) this.joinFailures.set(memberId, failures = [])
+      if (!failures) this.joinFailures.set(deviceId, failures = [])
       failures.push(now)
       return result
     }
@@ -146,20 +159,20 @@ export class RoomManager {
     const code = normalizeInviteCode(isRecord(req) ? req.code : undefined)
     if (!code) return recordFailure(fail('INVALID_PARAMS', 'Invite code must be 6 digits'))
 
-    const currentCode = this.memberRooms.get(memberId)
-    if (currentCode == code) {
-      const room = this.rooms.get(code)!
-      this.bindSocket(room, room.members.get(memberId)!, socket)
+    const current = this.getMembershipOf(deviceId)
+    if (current?.room.code == code) {
+      const { room, member } = current
+      this.bindSocket(room, member, socket)
       return ok(this.snapshot(room))
     }
-    if (currentCode != null) return fail('ALREADY_IN_ROOM', 'This device is already in another room')
+    if (current) return fail('ALREADY_IN_ROOM', 'This device is already in another room')
 
     const room = this.rooms.get(code)
     if (!room) return recordFailure(fail('ROOM_NOT_FOUND', 'Room not found'))
     if (room.members.size >= room.maxMembers) return recordFailure(fail('ROOM_FULL', 'Room is full'))
 
-    room.members.set(memberId, this.createMemberEntry(socket, account, now))
-    this.memberRooms.set(memberId, code)
+    room.members.set(memberId, this.createMemberEntry(socket, account, now, deviceId))
+    this.memberRooms.set(deviceId, { code, memberId })
     room.version++
     this.pushMemberChanged(room, { type: 'join', memberId }, memberId)
     return ok(this.snapshot(room))
@@ -167,7 +180,7 @@ export class RoomManager {
 
   getRoom(socket: LX.Socket): Result<Snapshot | null> {
     if (!this.getAccount(socket)) return fail('NOT_LUX_ACCOUNT', 'Listen together requires an active Lux account')
-    const room = this.getRoomOf(socket.keyInfo.clientId)
+    const room = this.getMembershipOf(this.getDeviceClientId(socket))?.room
     return ok(room ? this.snapshot(room) : null)
   }
 
@@ -276,19 +289,22 @@ export class RoomManager {
 
   // ---- connection lifecycle (§4.5) ----
 
-  /** A new socket for the same clientId finished `togetherModule.sync`: rebind it within the grace period. */
+  /** A new socket for the same device finished `togetherModule.sync`: rebind it within the grace period. */
   handleSocketReady(socket: LX.Socket) {
-    const room = this.getRoomOf(socket.keyInfo.clientId)
-    if (!room) return
-    this.bindSocket(room, room.members.get(socket.keyInfo.clientId)!, socket)
+    if (!isSocketOpen(socket)) return
+    const found = this.getMembershipOf(this.getDeviceClientId(socket))
+    if (!found) return
+    this.bindSocket(found.room, found.member, socket)
   }
 
   handleSocketClosed(socket: LX.Socket) {
-    const memberId = socket.keyInfo?.clientId
-    if (!memberId) return
-    const room = this.getRoomOf(memberId)
-    if (!room) return
-    const member = room.members.get(memberId)!
+    // Credentials or even the account directory may already have been removed.
+    // Lifecycle cleanup must use the identity bound while the session was live.
+    const deviceId = this.socketDeviceIds.get(socket)
+    if (!deviceId) return
+    const found = this.getMembershipOf(deviceId)
+    if (!found) return
+    const { room, memberId, member } = found
     // A replacement socket (checkDuplicateClient) may already be bound.
     if (member.socket !== socket) return
     const now = this.clock.now()
@@ -298,10 +314,22 @@ export class RoomManager {
     this.clearGrace(member)
     const roomId = room.roomId
     member.graceTimer = this.clock.setTimeout(() => {
-      this.handleGraceExpired(roomId, memberId)
+      this.handleGraceExpired(roomId, member.deviceId)
     }, this.config.graceMs)
     room.version++
     this.pushMemberChanged(room, { type: 'offline', memberId }, memberId)
+  }
+
+  /** Feature disable or failed sync leaves immediately, without the disconnect grace period. */
+  handleSocketDisabled(socket: LX.Socket) {
+    const deviceId = this.socketDeviceIds.get(socket)
+    if (!deviceId) return
+    const found = this.getMembershipOf(deviceId)
+    // An old session must not remove the membership of its replacement.
+    if (!found || found.member.socket !== socket) return
+    const { room, memberId } = found
+    if (room.hostId == memberId) this.removeHost(room, 'host_left')
+    else this.removeMember(room, memberId, 'left')
   }
 
   // ---- admin / maintenance ----
@@ -348,8 +376,10 @@ export class RoomManager {
     }
   }
 
-  private createMemberEntry(socket: LX.Socket, account: MemberAccount, now: number): MemberEntry {
+  private createMemberEntry(socket: LX.Socket, account: MemberAccount, now: number, deviceId: string): MemberEntry {
+    this.socketDeviceIds.set(socket, deviceId)
     return {
+      deviceId,
       info: {
         memberId: socket.keyInfo.clientId,
         userId: account.userId,
@@ -365,18 +395,20 @@ export class RoomManager {
     }
   }
 
-  private getRoomOf(memberId: string) {
-    const code = this.memberRooms.get(memberId)
-    return code == null ? null : this.rooms.get(code) ?? null
+  private getMembershipOf(deviceId: string) {
+    const membership = this.memberRooms.get(deviceId)
+    if (!membership) return null
+    const room = this.rooms.get(membership.code)
+    const member = room?.members.get(membership.memberId)
+    return room && member ? { room, memberId: membership.memberId, member } : null
   }
 
   private findMembership(socket: LX.Socket, req: unknown): Result<{ room: Room, memberId: string }> {
     if (!this.getAccount(socket)) return fail('NOT_LUX_ACCOUNT', 'Listen together requires an active Lux account')
-    const memberId = socket.keyInfo.clientId
-    const room = this.getRoomOf(memberId)
+    const found = this.getMembershipOf(this.getDeviceClientId(socket))
     const roomId = isRecord(req) ? req.roomId : undefined
-    if (!room || room.roomId !== roomId) return fail('NOT_IN_ROOM', 'Not in this room')
-    return ok({ room, memberId })
+    if (!found || found.room.roomId !== roomId) return fail('NOT_IN_ROOM', 'Not in this room')
+    return ok({ room: found.room, memberId: found.memberId })
   }
 
   private findHost(socket: LX.Socket, req: unknown): Result<Room> {
@@ -392,6 +424,8 @@ export class RoomManager {
   }
 
   private bindSocket(room: Room, member: MemberEntry, socket: LX.Socket) {
+    if (!isSocketOpen(socket)) return
+    this.socketDeviceIds.set(socket, member.deviceId)
     member.socket = socket
     member.info.deviceName = socket.keyInfo.deviceName
     if (member.info.online) return
@@ -408,10 +442,10 @@ export class RoomManager {
     member.graceTimer = null
   }
 
-  private handleGraceExpired(roomId: string, memberId: string) {
-    const room = this.getRoomOf(memberId)
-    if (!room || room.roomId != roomId) return
-    const member = room.members.get(memberId)!
+  private handleGraceExpired(roomId: string, deviceId: string) {
+    const found = this.getMembershipOf(deviceId)
+    if (!found || found.room.roomId != roomId) return
+    const { room, memberId, member } = found
     member.graceTimer = null
     if (member.info.online) return
     if (room.hostId == memberId) this.removeHost(room, 'host_timeout')
@@ -446,7 +480,7 @@ export class RoomManager {
     if (!member) return
     this.clearGrace(member)
     room.members.delete(memberId)
-    this.memberRooms.delete(memberId)
+    this.memberRooms.delete(member.deviceId)
     room.version++
     this.pushMemberChanged(room, { type: 'leave', memberId, reason }, memberId)
   }
@@ -454,9 +488,9 @@ export class RoomManager {
   private destroyRoom(room: Room, reason: LX.Sync.Together.CloseReason, exceptMemberId?: string) {
     const push: LX.Sync.Together.RoomClosedPush = { roomId: room.roomId, reason }
     broadcastRoom(room, async remote => remote['together:onRoomClosed'](push), exceptMemberId)
-    for (const [memberId, member] of room.members) {
+    for (const member of room.members.values()) {
       this.clearGrace(member)
-      this.memberRooms.delete(memberId)
+      this.memberRooms.delete(member.deviceId)
     }
     room.members.clear()
     this.rooms.delete(room.code)

@@ -81,6 +81,60 @@ describe('together rooms: lifecycle', () => {
     assert.equal(unwrap(manager.getRoom(createFakeSocket('c_other', 'carol'))), null)
   })
 
+  it('uses canonical device identity across alias reconnects while preserving public member IDs', () => {
+    const { manager, advance, pendingTimers } = createTestManager({}, { c_alias: 'c_host' })
+    const original = createFakeSocket('c_alias', 'alice')
+    const host = createFakeSocket('c_host', 'alice', 'Renamed device')
+    const bob = createFakeSocket('c_bob', 'bob')
+    const room = unwrap(manager.createRoom(original))
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    manager.handleSocketClosed(original)
+    advance(29_000)
+    bob.takePushes()
+
+    manager.handleSocketReady(host)
+    const restored = unwrap(manager.getRoom(host))!
+    assert.equal(restored.roomId, room.roomId)
+    assert.equal(restored.hostId, 'c_alias')
+    assert.deepEqual(restored.members.map(member => member.memberId), ['c_alias', 'c_bob'])
+    assert.equal(restored.members[0].deviceName, 'Renamed device')
+    assert.equal(restored.members[0].online, true)
+    assert.equal(pendingTimers(), 0)
+    assert.deepEqual(bob.takePushes('together:onMemberChanged')[0].payload.change, { type: 'online', memberId: 'c_alias' })
+    assert.equal(codeOf(manager.createRoom(host)), 'ALREADY_IN_ROOM')
+    assert.equal(unwrap(manager.joinRoom(host, { code: room.code })).members.length, 2)
+
+    // Late events from the superseded credential cannot affect the bound socket.
+    manager.handleSocketClosed(original)
+    manager.handleSocketDisabled(original)
+    assert.equal(pendingTimers(), 0)
+    assert.equal(unwrap(manager.getRoom(host))!.members[0].online, true)
+    assert.equal(codeOf(manager.hostUpdateState(host, stateReq(room.roomId, 1))), 'OK')
+    unwrap(manager.transferHost(host, { roomId: room.roomId, memberId: 'c_bob' }))
+    unwrap(manager.transferHost(bob, { roomId: room.roomId, memberId: 'c_alias' }))
+    unwrap(manager.closeRoom(host, { roomId: room.roomId }))
+    assert.equal(unwrap(manager.getRoom(original)), null)
+    unwrap(manager.createRoom(host))
+    assert.equal(codeOf(manager.createRoom(original)), 'ALREADY_IN_ROOM')
+  })
+
+  it('rebinds an idempotent join through an alias and removes the canonical membership on leave', () => {
+    const { manager } = createTestManager({}, { c_alias: 'c_bob' })
+    const host = createFakeSocket('c_host', 'alice')
+    const bob = createFakeSocket('c_bob', 'bob')
+    const alias = createFakeSocket('c_alias', 'bob')
+    const room = unwrap(manager.createRoom(host))
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    const joined = unwrap(manager.joinRoom(alias, { code: room.code }))
+    assert.deepEqual(joined.members.map(member => member.memberId), ['c_host', 'c_bob'])
+    manager.handleSocketClosed(bob)
+    assert.equal(unwrap(manager.getRoom(alias))!.members[1].online, true)
+    unwrap(manager.leaveRoom(alias, { roomId: room.roomId }))
+    assert.equal(unwrap(manager.getRoom(bob)), null)
+    assert.equal(unwrap(manager.getRoom(alias)), null)
+    assert.equal(unwrap(manager.joinRoom(alias, { code: room.code })).members[1].memberId, 'c_alias')
+  })
+
   it('reports ROOM_NOT_FOUND, ROOM_FULL, ALREADY_IN_ROOM and ROOM_LIMIT', () => {
     const { manager, room } = setupRoom({ maxMembers: 2, maxRooms: 2 })
     assert.equal(codeOf(manager.joinRoom(createFakeSocket('c_x', 'bob'), { code: room.code == '999999' ? '888888' : '999999' })), 'ROOM_NOT_FOUND')
@@ -130,6 +184,66 @@ describe('together rooms: lifecycle', () => {
     assert.equal(unwrap(manager.getRoom(bob)), null)
     assert.deepEqual(manager.getStats(), { activeRooms: 0, members: 0, onlineMembers: 0 })
     unwrap(manager.createRoom(bob))
+  })
+
+  it('feature disable immediately removes members, transfers the host, and closes an empty room', () => {
+    const { manager, host, room, pendingTimers } = setupRoom()
+    const bob = createFakeSocket('c_bob', 'bob')
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    host.takePushes()
+    bob.moduleReadys.together = false
+    manager.handleSocketDisabled(bob)
+    assert.equal(unwrap(manager.getRoom(bob)), null)
+    assert.deepEqual(host.takePushes('together:onMemberChanged')[0].payload.change, { type: 'leave', memberId: 'c_bob', reason: 'left' })
+
+    bob.moduleReadys.together = true
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    bob.takePushes()
+    host.moduleReadys.together = false
+    manager.handleSocketDisabled(host)
+    const remaining = unwrap(manager.getRoom(bob))!
+    assert.equal(remaining.hostId, 'c_bob')
+    assert.deepEqual(remaining.members.map(member => member.memberId), ['c_bob'])
+    assert.equal(bob.takePushes('together:onHostChanged')[0].payload.reason, 'host_left')
+    assert.equal(pendingTimers(), 0)
+
+    bob.moduleReadys.together = false
+    manager.handleSocketDisabled(bob)
+    assert.deepEqual(manager.getStats(), { activeRooms: 0, members: 0, onlineMembers: 0 })
+  })
+
+  it('cleans up bound sockets without resolving credentials after account or credential removal', () => {
+    let credentialsAvailable = true
+    const aliases = new Proxy({ c_alias: 'c_host' }, {
+      get(target, key) {
+        assert.equal(credentialsAvailable, true, 'close and disable must not reload deleted user data')
+        return Reflect.get(target, key)
+      },
+    })
+    const { manager, pendingTimers } = createTestManager({}, aliases)
+    const original = createFakeSocket('c_alias', 'alice')
+    const replacement = createFakeSocket('c_host', 'alice')
+    const bob = createFakeSocket('c_bob', 'bob')
+    const room = unwrap(manager.createRoom(original))
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    manager.handleSocketReady(replacement)
+    credentialsAvailable = false
+
+    manager.handleSocketClosed(original)
+    manager.handleSocketDisabled(original)
+    assert.deepEqual(manager.getStats(), { activeRooms: 1, members: 2, onlineMembers: 2 })
+    manager.handleSocketClosed(replacement)
+    assert.deepEqual(manager.getStats(), { activeRooms: 1, members: 2, onlineMembers: 1 })
+    assert.equal(pendingTimers(), 1)
+    manager.handleSocketDisabled(bob)
+    assert.deepEqual(manager.getStats(), { activeRooms: 1, members: 1, onlineMembers: 0 })
+
+    manager.evictUser('u_alice')
+    manager.handleSocketClosed(replacement)
+    manager.handleSocketDisabled(replacement)
+    manager.handleSocketClosed(createFakeSocket('never_joined', 'alice'))
+    assert.deepEqual(manager.getStats(), { activeRooms: 0, members: 0, onlineMembers: 0 })
+    assert.equal(pendingTimers(), 0)
   })
 })
 
@@ -400,6 +514,35 @@ describe('together rooms: host transfer, disconnects and grace period', () => {
     assert.equal(snap.hostId, 'c_host')
     assert.equal(snap.members.every(m => m.online), true)
     assert.equal(codeOf(manager.hostUpdateState(host2, stateReq(room.roomId, 1))), 'OK')
+  })
+
+  it('a closed socket cannot rebind through ready or an idempotent join and cancel its grace timer', () => {
+    const { manager, host, room, advance, pendingTimers } = setupRoom()
+    const bob = createFakeSocket('c_bob', 'bob')
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    host.close()
+    manager.handleSocketClosed(host)
+    manager.handleSocketReady(host)
+    assert.equal(unwrap(manager.joinRoom(host, { code: room.code })).members[0].online, false)
+    assert.equal(pendingTimers(), 1)
+    advance(30_000)
+    const remaining = unwrap(manager.getRoom(bob))!
+    assert.equal(remaining.hostId, 'c_bob')
+    assert.deepEqual(remaining.members.map(member => member.memberId), ['c_bob'])
+  })
+
+  it('expires canonical device membership even when its public memberId is an alias', () => {
+    const { manager, advance } = createTestManager({}, { c_alias: 'c_host' })
+    const host = createFakeSocket('c_alias', 'alice')
+    const canonical = createFakeSocket('c_host', 'alice')
+    const bob = createFakeSocket('c_bob', 'bob')
+    const room = unwrap(manager.createRoom(host))
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    manager.handleSocketClosed(host)
+    advance(30_000)
+    assert.equal(unwrap(manager.getRoom(canonical)), null)
+    assert.equal(unwrap(manager.getRoom(bob))!.hostId, 'c_bob')
+    assert.equal(unwrap(manager.createRoom(canonical)).hostId, 'c_host')
   })
 
   it('ping echoes t0 with server time', () => {

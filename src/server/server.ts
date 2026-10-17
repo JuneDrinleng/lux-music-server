@@ -9,6 +9,8 @@ import { getUserSpace, releaseUserSpace, getUserName } from '@/user'
 import { createMsg2call } from 'message2call'
 import { createApp } from './app'
 import { getServerStatus, setServerStatus } from './status'
+import { createMessageQueue } from './messageQueue'
+import { isSocketOpen } from './socketState'
 
 
 let status: LX.Sync.Status = getServerStatus()
@@ -87,6 +89,7 @@ const handleConnection = async(socket: LX.Socket, request: IncomingMessage) => {
     socket.close(SYNC_CLOSE_CODE.failed)
     return
   }
+  if (!isSocketOpen(socket)) return
   status.devices.push(keyInfo)
   // handleConnection(io, socket)
   sendStatus(status)
@@ -133,6 +136,7 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
   wss = new WebSocketServer({
     noServer: true,
   })
+  const sendQueues = new WeakMap<LX.Socket, (data: string) => Promise<void>>()
 
   wss.on('connection', function(socket, request) {
     socket.isReady = false
@@ -157,22 +161,26 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
     // let events: Partial<{ [K in keyof LX.Sync.ActionSyncType]: Array<(data: LX.Sync.ActionSyncType[K]) => void> }> = {}
     let closeEvents: Array<(err: Error) => (void | Promise<void>)> = []
     let disconnected = false
+    const sendMessage = createMessageQueue({
+      isOpen: () => !disconnected && isSocketOpen(socket),
+      transform: async(data) => encryptMsg(socket.keyInfo, data),
+      handle: data => { socket.send(data) },
+      onError: error => {
+        syncLog.error('encrypt message error:', error)
+        socket.close(SYNC_CLOSE_CODE.failed)
+      },
+    })
+    sendQueues.set(socket, sendMessage)
     const msg2call = createMsg2call<LX.Sync.ClientSyncActions>({
       funcsObj: callObj,
       timeout: 120 * 1000,
       sendMessage(data) {
-        if (disconnected) {
+        if (disconnected || !isSocketOpen(socket)) {
           syncLog.warn('drop sync reply: client already disconnected')
           return
         }
-        void encryptMsg(socket.keyInfo, JSON.stringify(data)).then((data) => {
-          // console.log('sendData', eventName)
-          socket.send(data)
-        }).catch(err => {
-          syncLog.error('encrypt message error:', err)
-          syncLog.error(err.message)
-          socket.close(SYNC_CLOSE_CODE.failed)
-        })
+        // Snapshot mutable RPC arguments before waiting for previous frames.
+        void sendMessage(JSON.stringify(data))
       },
       onCallBeforeParams(rawArgs) {
         const args = Array.isArray(rawArgs) ? rawArgs : []
@@ -191,9 +199,10 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
     socket.remote = msg2call.remote
     socket.remoteQueueList = msg2call.createQueueRemote('list')
     socket.remoteQueueDislike = msg2call.createQueueRemote('dislike')
-    socket.addEventListener('message', ({ data }) => {
-      if (typeof data != 'string') return
-      void decryptMsg(socket.keyInfo, data).then((data) => {
+    const receiveMessage = createMessageQueue({
+      isOpen: () => !disconnected && isSocketOpen(socket),
+      transform: async(data) => decryptMsg(socket.keyInfo, data),
+      handle(data) {
         let syncData: any
         try {
           syncData = JSON.parse(data)
@@ -202,14 +211,25 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
           socket.close(SYNC_CLOSE_CODE.failed)
           return
         }
+        // Dispatch in wire order without waiting for async RPC handlers, which
+        // may themselves need a later incoming reply to finish.
         msg2call.message(syncData)
-      }).catch(err => {
-        syncLog.error('decrypt message error:', err)
-        syncLog.error(err.message)
+      },
+      onError: error => {
+        syncLog.error('decrypt message error:', error)
         socket.close(SYNC_CLOSE_CODE.failed)
-      })
+      },
+    })
+    socket.addEventListener('message', ({ data }) => {
+      if (typeof data == 'string') void receiveMessage(data)
     })
     socket.addEventListener('close', () => {
+      const wasReady = socket.isReady
+      disconnected = true
+      socket.isReady = false
+      for (const name of Object.keys(socket.moduleReadys) as Array<keyof LX.Socket['moduleReadys']>) {
+        socket.moduleReadys[name] = false
+      }
       const err = new Error('closed')
       try {
         for (const handler of closeEvents) void handler(err)
@@ -217,9 +237,8 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
         syncLog.error(err?.message)
       }
       closeEvents = []
-      disconnected = true
       msg2call.destroy()
-      if (socket.isReady) {
+      if (wasReady) {
         accessLog.info('deconnection', socket.userInfo.name, socket.keyInfo.deviceName)
         // events = {}
         if (!status.devices.map(d => getUserName(d.clientId)).filter(n => n == socket.userInfo.name).length) handleUnconnection(socket.userInfo.name)
@@ -270,7 +289,7 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
 
       socket.isAlive = false
       socket.ping(noop)
-      if (socket.keyInfo.isMobile) socket.send('ping', noop)
+      if (socket.keyInfo.isMobile) void sendQueues.get(socket)?.('ping')
     })
   }, 30000)
 

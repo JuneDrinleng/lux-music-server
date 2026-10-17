@@ -1,9 +1,7 @@
 import { UserDataManage } from './data'
-import {
-  ListManage,
-  DislikeManage,
-  PlayHistoryManage,
-} from '@/modules'
+import { ListManage } from '@/modules/list/manage'
+import { DislikeManage } from '@/modules/dislike/manage'
+import { PlayHistoryManage } from '@/modules/playHistory/store'
 
 export interface UserSpace {
   dataManage: UserDataManage
