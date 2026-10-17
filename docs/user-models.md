@@ -34,7 +34,7 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 - **连接码（lxSyncCode）**：投影为 `config.users[].password`，用于 LX 客户端 `/ah`。
 - 管理台「查看/重置连接码」改的是 `lxSyncCode`，不会改登录密码。
 - 改登录密码会 `sessionVersion++`，使已有 JWT 失效；重置连接码只影响同步鉴权。
-- 自助修改密码（`POST /api/me/password`）需提交 `oldPassword` 和新 `password`；成功后返回 `{ ok: true, token, user }`，Web 管理台保存新 token 以保持当前登录。可选的 `revokeOtherDevices` 必须是布尔值；本阶段不撤销同步设备密钥，完整行为将在后续 PR 实现。
+- 自助修改密码（`POST /api/me/password`）需提交 `oldPassword` 和新 `password`；成功后返回 `{ ok: true, token, user }`，Web 管理台保存新 token 以保持当前登录。可选的 `revokeOtherDevices` 必须是布尔值；修改密码始终撤销该账号全部同步设备密钥（不论此字段的值）。
 
 对仅存在于 `config.js` / `LX_USER_*` 的遗留用户：
 
@@ -56,7 +56,26 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 - 每个会话是一条刷新令牌家族，保存 generation 和已轮换令牌的 SHA-256 哈希用于重放检测。重用已轮换令牌会撤销整个会话，连同该家族最新的刷新令牌也失效。未知、过期、已撤销或重放返回 401；沿用按 IP 的失败次数限制（达到限制后 403）。客户端应串行刷新并及时保存新令牌。
 - 携带 `sid` 的令牌调用 `POST /api/auth/logout` 只撤销当前会话；旧令牌登出仍提升 `sessionVersion`，使该账号全部 JWT 失效，同时撤销全部刷新会话。
 - 修改密码（包括管理员重置）或禁用账号会撤销全部会话；禁用也提升 `sessionVersion`。重新启用后需重新登录创建会话。自助改密仍返回替换用的旧格式 `token`。
-- 会话保存到 `DATA_PATH/lux/sessions.json`（与 `accounts.json` 同目录），只存刷新令牌哈希，不存原文。沿用原子写入和损坏/不可读文件备份后拒绝启动策略；临时文件不参与恢复。保存时清理撤销超过 30 天或过期超过 30 天的会话。会话管理 API 与同步设备密钥不属于本阶段。
+- 会话保存到 `DATA_PATH/lux/sessions.json`（与 `accounts.json` 同目录），只存刷新令牌哈希，不存原文。沿用原子写入和损坏/不可读文件备份后拒绝启动策略；临时文件不参与恢复。保存时清理撤销超过 30 天或过期超过 30 天的会话。会话管理 API 不属于本阶段；同步设备密钥生命周期见下表。
+
+### 同步密钥生命周期（PR 2.2）
+
+`KeyInfo.sessionId?` 和 `origin?: 'account' | 'code'` 只存服务端，不加入 HTTP 设备列表白名单；列表不返回密钥。带 `sid` 的 Bearer token 调用 `/api/sync/key` 时绑定该会话，`origin` 为 `account`；旧 token 签发的密钥仍为 `account`，但没有 `sessionId`。连接码 `/ah` 签发的密钥为 `code`，没有 `sessionId`。复用凭据时也记录本次签发来源与会话。
+
+| 事件 | 带 sessionId 的密钥 | 无 sessionId 的密钥（code / 旧 account / 历史记录） |
+| --- | --- | --- |
+| `/ah` 密钥认证、WS upgrade / 建连 | 会话须存在、未撤销且未过期，否则按未知密钥拒绝 | 保持可用，每个 clientId 每进程只警告一次，不记录密钥 |
+| sid 登出、刷新令牌重放、相同 deviceId 重新登录、直接撤销会话 | 删除该会话的密钥，立即断开对应同步连接 | 保持可用 |
+| 旧 token 登出 | 撤销全部会话，删除其绑定密钥并断开对应连接 | 保持可用 |
+| 自助改密 / 管理员重置密码 | 全部删除并断开该用户全部同步连接 | 全部删除并断开该用户全部同步连接 |
+| 禁用账号 | 全部删除并断开该用户全部同步连接 | 全部删除并断开该用户全部同步连接 |
+| 重新启用账号 | 不恢复已删除密钥；旧 token 仍因 sessionVersion 失效 | 不恢复已删除密钥 |
+| 自助 / 管理员重置连接码 | 保持可用 | 全部删除并断开对应同步连接 |
+| 删除设备 | 删除该设备全部凭据（含别名）并断开对应连接 | 同左 |
+
+撤销按凭据的会话归属执行，不因历史别名属于同一展示设备而误删其他会话或旧凭据；保留凭据的同步基线继续可用。会话存储通过注入回调通知服务端，账号层不导入服务端或用户模块。
+
+**兼容性 / PR 说明：legacy keys keep working with a warning。** 现有无会话密钥无需迁移或重新配对，除非执行上述明确撤销操作；mobile 与 server 无需同时发布。服务端新增日志示例：`legacy sync key without session: <clientId> user <name>`。
 
 | 环境变量 | 默认值 | 含义 |
 | --- | --- | --- |

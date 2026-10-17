@@ -52,6 +52,11 @@ export class AccountStore {
   private readonly filePath: string
   private data: LuxAccountStoreData
   readonly sessions: SessionStore
+  private syncKeyRevocationListener?: (username: string, scope: 'all' | 'sessionless') => void
+
+  onSyncKeysRevoked(listener: (username: string, scope: 'all' | 'sessionless') => void) {
+    this.syncKeyRevocationListener = listener
+  }
   /** config.js / LX_USER_* users captured at process startup (before managed projection). */
   private baselineConfigUsers: LX.UserConfig[] = []
 
@@ -277,6 +282,7 @@ export class AccountStore {
     user.sessionVersion += 1
     user.updatedAt = now()
     this.saveSync()
+    this.syncKeyRevocationListener?.(user.username, 'all')
     return sanitizeUser(user)
   }
 
@@ -304,6 +310,7 @@ export class AccountStore {
     user.syncCodeUpdatedAt = now()
     user.updatedAt = user.syncCodeUpdatedAt
     this.saveSync()
+    this.syncKeyRevocationListener?.(user.username, 'sessionless')
     return user.lxSyncCode
   }
 
@@ -326,7 +333,8 @@ export class AccountStore {
     if (data.gender !== undefined) user.gender = data.gender
     if (data.signature !== undefined) user.signature = data.signature
     if (data.role) user.role = data.role
-    if (data.status == 'disabled' && user.status != 'disabled') {
+    const disabling = data.status == 'disabled' && user.status != 'disabled'
+    if (disabling) {
       this.sessions.revokeUser(userId)
       user.sessionVersion += 1
     }
@@ -335,6 +343,7 @@ export class AccountStore {
     if (data['list.addMusicLocationType'] !== undefined) user['list.addMusicLocationType'] = data['list.addMusicLocationType']
     user.updatedAt = now()
     this.saveSync()
+    if (disabling) this.syncKeyRevocationListener?.(user.username, 'all')
     return sanitizeUser(user)
   }
 

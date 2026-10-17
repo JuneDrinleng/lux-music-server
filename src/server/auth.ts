@@ -11,6 +11,22 @@ import querystring from 'node:querystring'
 import store from '@/utils/cache'
 import { getUserSpace, getUserName } from '@/user'
 import { toMD5 } from '@/utils'
+import { getAccountStore } from '@/account/store'
+import { syncLog } from '@/utils/log4js'
+
+const warnedLegacyClients = new Set<string>()
+export const isSyncKeyActive = (key: LX.Sync.KeyInfo, userName: string) => {
+  if (key.sessionId !== undefined) {
+    const store = getAccountStore()
+    const user = store.findManagedUserByUsername(userName)
+    return !!user && user.status == 'active' && store.sessions.isActive(key.sessionId, user.id)
+  }
+  if (!warnedLegacyClients.has(key.clientId)) {
+    warnedLegacyClients.add(key.clientId)
+    syncLog.warn(`legacy sync key without session: ${key.clientId} user ${userName}`)
+  }
+  return true
+}
 
 const getAvailableIP = (req: http.IncomingMessage) => {
   let ip = getIP(req)
@@ -22,7 +38,7 @@ const verifyByKey = (encryptMsg: string, userId: string) => {
   if (!userName) return null
   const userSpace = getUserSpace(userName)
   const keyInfo = userSpace.dataManage.getClientKeyInfo(userId)
-  if (!keyInfo) return null
+  if (!keyInfo || !isSyncKeyActive(keyInfo, userName)) return null
   let text
   try {
     text = aesDecrypt(encryptMsg, keyInfo.key)
@@ -73,7 +89,7 @@ const verifyByCode = (encryptMsg: string, users: LX.Config['users']) => {
       const userSpace = getUserSpace(userInfo.name)
       let keyInfo: LX.Sync.KeyInfo
       try {
-        keyInfo = userSpace.dataManage.upsertClientKeyInfo({ deviceId, publicKeyHash, deviceName, isMobile })
+        keyInfo = userSpace.dataManage.upsertClientKeyInfo({ deviceId, publicKeyHash, deviceName, isMobile, origin: 'code' })
       } catch (err) {
         if (err instanceof Error && err.message == 'Conflicting device identity') return null
         throw err
@@ -126,7 +142,7 @@ const verifyConnection = (encryptMsg: string, userId: string) => {
   if (!userName) return false
   const userSpace = getUserSpace(userName)
   const keyInfo = userSpace.dataManage.getClientKeyInfo(userId)
-  if (!keyInfo) return false
+  if (!keyInfo || !isSyncKeyActive(keyInfo, userName)) return false
   let text
   try {
     text = aesDecrypt(encryptMsg, keyInfo.key)

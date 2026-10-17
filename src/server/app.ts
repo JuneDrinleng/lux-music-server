@@ -5,6 +5,8 @@ import { type FastifyInstance, type FastifyReply, type FastifyRequest, fastify }
 import { SYNC_CODE } from '@/constants'
 import { getServerId } from '@/user'
 import { authCode } from './auth'
+import { getAccountStore } from '@/account/store'
+import { registerSyncKeyRevocation } from './server'
 import { registerAdminApi } from './api/admin'
 import { registerAuthApi } from './api/auth'
 import { registerMeApi } from './api/me'
@@ -78,6 +80,7 @@ const sendText = (reply: FastifyReply, code: number, text: string) => {
 export const API_BODY_LIMIT = 256 * 1024
 
 export const createApp = (): FastifyInstance => {
+  registerSyncKeyRevocation(getAccountStore())
   const app = fastify({
     logger: false,
     bodyLimit: API_BODY_LIMIT,

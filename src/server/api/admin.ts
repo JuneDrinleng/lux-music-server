@@ -99,10 +99,7 @@ export const registerAdminApi = async(app: FastifyInstance) => {
         maxSnapshotNum: getNumber(request.body.maxSnapshotNum),
         'list.addMusicLocationType': getAddMusicLocationType(request.body['list.addMusicLocationType']),
       }, getRequiredAuthUser(request).id)
-      if (user.status == 'disabled') {
-        disconnectUserSessions(user.username)
-        getRoomManager().evictUser(id)
-      }
+      if (user.status == 'disabled') getRoomManager().evictUser(id)
       return { user }
     } catch (err: any) {
       if (err.message == 'Cannot disable or demote yourself' || err.message == 'Cannot disable or demote the last active admin') {

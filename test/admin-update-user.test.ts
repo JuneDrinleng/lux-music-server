@@ -108,7 +108,9 @@ describe('admin update user protection', () => {
       assert.deepEqual(parseJson(response.body), { message: 'Cannot disable or demote the last active admin' })
       assert.ok(before)
       assert.deepEqual(snapshot(), before)
-      assert.equal(disconnect.mock.callCount(), 0)
+      // Disabling the actor revokes its sync access; the rejected target update
+      // must not disconnect any additional user.
+      assert.deepEqual(disconnect.mock.calls.map(call => call.arguments), [[actor.username, undefined]])
     })
 
     it(`store rejects self ${action} even when another active admin remains`, async() => {
