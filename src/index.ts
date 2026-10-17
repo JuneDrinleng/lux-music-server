@@ -258,10 +258,5 @@ createModuleEvent()
 require('@/utils/migrate').default(global.lx.dataPath, global.lx.userPath)
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const { initSourceRegistry } = require('@/modules/source')
-void initSourceRegistry().catch((err: Error) => console.warn('source registry init failed:', err.message))
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const { startServer } = require('@/server')
 startServer(port, bindIP)
-

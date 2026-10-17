@@ -84,22 +84,6 @@ declare namespace LX {
     type MusicInfoOnline = MusicInfo_online_common | MusicInfo_kg | MusicInfo_tx | MusicInfo_mg
     type MusicInfo = MusicInfoOnline | MusicInfoLocal
 
-    interface LyricInfo {
-      // 歌曲歌词
-      lyric: string
-      // 翻译歌词
-      tlyric?: string | null
-      // 罗马音歌词
-      rlyric?: string | null
-      // 逐字歌词
-      lxlyric?: string | null
-    }
-
-    interface LyricInfoSave {
-      id: string
-      lyrics: LyricInfo
-    }
-
     interface MusicFileMeta {
       title: string
       artist: string | null
@@ -107,16 +91,5 @@ declare namespace LX {
       APIC: string | null
       lyrics: string | null
     }
-
-    interface MusicUrlInfo {
-      id: string
-      url: string
-    }
-
-    interface MusicInfoOtherSourceSave {
-      id: string
-      list: MusicInfoOnline[]
-    }
-
   }
 }

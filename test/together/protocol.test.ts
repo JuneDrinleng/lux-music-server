@@ -67,6 +67,52 @@ describe('together protocol wiring', () => {
     assert.equal(socket.moduleReadys.together, false)
   })
 
+  it('ignores source requests during negotiation and feature changes while keeping together working', async() => {
+    const socket = createFakeSocket('c_alice', 'alice')
+    socket.moduleReadys.together = false
+    socket.feature.together = false
+    let finished = 0
+    let togetherFinished = 0
+    const sourceOnly: LX.Sync.EnabledFeatures & { source: boolean } = { source: true }
+    socket.remote = {
+      async getEnabledFeatures(_type: string, supported: Record<string, number>) {
+        assert.equal('source' in supported, false)
+        return sourceOnly
+      },
+      async together_sync_finished() { togetherFinished++ },
+      async finished() { finished++ },
+    } as unknown as LX.Socket['remote']
+
+    await sync(socket)
+    assert.equal(finished, 1)
+    assert.equal(togetherFinished, 0)
+    assert.equal(socket.moduleReadys.together, false)
+    assert.equal('source' in socket.feature, false)
+    assert.equal('source' in socket.moduleReadys, false)
+
+    socket.remote.getEnabledFeatures = async() => ({ ...sourceOnly, together: true })
+    await sync(socket)
+    assert.equal(finished, 2)
+    assert.equal(togetherFinished, 1)
+    assert.equal('source' in socket.feature, false)
+    assert.equal('source' in socket.moduleReadys, false)
+    assert.equal(Object.keys(callObj).some(method => method.startsWith('source:')), false)
+    assert.equal(unwrap(await handler['together:ping'](socket, { t0: 7 })).t0, 7)
+
+    await featureHandler.onFeatureChanged(socket, sourceOnly)
+    assert.equal(togetherFinished, 1)
+    assert.equal(socket.moduleReadys.together, true)
+    const disabled = { source: true, together: false }
+    await featureHandler.onFeatureChanged(socket, disabled)
+    assert.equal(socket.moduleReadys.together, false)
+    const enabled = { source: true, together: true }
+    await featureHandler.onFeatureChanged(socket, enabled)
+    assert.equal(togetherFinished, 2)
+    assert.equal('source' in socket.feature, false)
+    assert.equal('source' in socket.moduleReadys, false)
+    assert.equal(unwrap(await handler['together:ping'](socket, { t0: 8 })).t0, 8)
+  })
+
   it('uses managed account fields, rejects legacy config users, and rebinds on reconnect sync', async() => {
     global.lx.config.users = [{ name: 'legacy', password: 'code', dataPath: '' }]
     const legacy = createFakeSocket('c_legacy', 'legacy')

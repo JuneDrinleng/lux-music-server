@@ -40,8 +40,6 @@ declare namespace LX {
       playHistory?: false | true
       /** Lux listen together. Absent on legacy LX clients. */
       together?: boolean
-      /** Lux server-side source resolution. Absent on legacy LX clients. */
-      source?: false | true
     }
     type SupportedFeatures = Partial<{ [k in keyof EnabledFeatures]: number }>
   }

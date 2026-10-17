@@ -219,9 +219,6 @@ server {
 | `LUX_TOGETHER_MAX_MEMBERS` | 一起听单房间成员上限（**含房主**），默认 `10`，合法范围 2–50。 |
 | `LUX_TOGETHER_MAX_ROOMS` | 服务端同时存在的房间数上限，默认 `100`。 |
 | `LUX_TOGETHER_GRACE_MS` | 成员/房主断线后的宽限期（毫秒），默认 `30000`，合法范围 5000–300000。 |
-| `LUX_SOURCE_TIMEOUT_MS` | Lux 模式下单次音源脚本 action 与初始化超时（毫秒），默认 `15000`，合法范围 1000–60000。 |
-| `LUX_SOURCE_MEMORY_MB` | 每个已启用脚本的 worker `maxOldGenerationSizeMb`，默认 `128`，合法范围 32–1024。 |
-| `LUX_SOURCE_PROXY_STREAM` | 设为 `true` 或 `1` 时，`resolveMusicUrl` 返回 `/api/source/stream/…` 代理路径（默认关）。 |
 | `LX_USER_` | 以 `LX_USER_` 开头的环境变量将被识别为用户配置，可用的配置语法为：<br />1. `LX_USER_user1='xxx'`；<br />2. `LX_USER_user1='{"password":"xxx"}'`。<br />其中 `LX_USER_` 会被去掉，剩下的 `user1` 为用户名，`xxx` 为用户密码（**连接码**）。<br />配置方式 1 为简写模式，只指定用户名及密码（链接码），其他配置使用公共配置。<br />配置方式 2 为 JSON 字符串格式，配置内容参考 `config.js`，由于该方式在变量名指定了用户名，所以 JSON 里的用户名是可选的。 |
 
 关于 `config.users`（连接码）与 `accounts.json`（托管账号）的关系，见 [docs/user-models.md](docs/user-models.md)。

@@ -13,7 +13,6 @@ declare global {
         dislike: boolean
         playHistory: boolean
         together: boolean
-        source: boolean
       }
 
       onClose: (handler: (err: Error) => (void | Promise<void>)) => () => void
@@ -26,4 +25,3 @@ declare global {
     type SocketServer = WS.Server<Socket>
   }
 }
-
