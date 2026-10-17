@@ -12,6 +12,12 @@ export const setToken = (value: string) => {
   else localStorage.removeItem(tokenKey)
 }
 
+export class ApiError extends Error {
+  constructor(message: string, public status: number) {
+    super(message)
+  }
+}
+
 const parseResponseJson = (text: string): Record<string, unknown> => {
   if (!text) return {}
   try {
@@ -30,10 +36,16 @@ const request = async<T>(path: string, options: RequestInit = {}): Promise<T> =>
 
   const res = await fetch(path, { ...options, headers })
   const text = await res.text()
-  const data = parseResponseJson(text)
+  let data: Record<string, unknown>
+  try {
+    data = parseResponseJson(text)
+  } catch (error) {
+    if (!res.ok) throw new ApiError(error instanceof Error ? error.message : res.statusText, res.status)
+    throw error
+  }
   if (!res.ok) {
     const message = typeof data.message == 'string' ? data.message : res.statusText
-    throw new Error(message || `请求失败 (${res.status})`)
+    throw new ApiError(message || `请求失败 (${res.status})`, res.status)
   }
   return data as T
 }

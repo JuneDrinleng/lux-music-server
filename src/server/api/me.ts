@@ -9,16 +9,8 @@ import { getString, isRecord, toPublicDevice } from './utils'
 import { clearAuthFailures, getRequestIP, isAuthRateLimited, recordAuthFailure } from './rateLimit'
 import { sendError } from './errors'
 
-const getOptionalProfileString = (value: unknown, maxLength: number) => {
-  if (typeof value !== 'string') return undefined
-  const text = value.trim().substring(0, maxLength)
-  return text || ''
-}
-const getGender = (value: unknown): 'male' | 'female' | 'unknown' | undefined => {
-  if (typeof value != 'string') return undefined
-  return value == 'male' || value == 'female' || value == 'unknown' ? value : undefined
-}
 const toProfile = (user: ReturnType<ReturnType<typeof getAccountStore>['findManagedUserById']>) => ({
+  username: user?.username ?? '',
   displayName: user?.displayName ?? '',
   avatar: user?.avatar ?? '',
   gender: user?.gender ?? 'unknown',
@@ -26,14 +18,43 @@ const toProfile = (user: ReturnType<ReturnType<typeof getAccountStore>['findMana
 })
 const updateProfile = async(request: AuthRequest, reply: FastifyReply) => {
   if (!isRecord(request.body)) return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid body')
+  const body = request.body
+  if (Object.prototype.hasOwnProperty.call(body, 'username')) return sendError(reply, 400, 'USERNAME_READONLY', 'Username is read-only; edit displayName instead')
+  const profile: Parameters<ReturnType<typeof getAccountStore>['updateUser']>[1] = {}
+  for (const [field, limit, code] of [
+    ['displayName', 100, 'INVALID_DISPLAY_NAME'],
+    ['avatar', 200 * 1024, 'INVALID_AVATAR'],
+    ['signature', 140, 'INVALID_SIGNATURE'],
+  ] as const) {
+    if (!Object.prototype.hasOwnProperty.call(body, field)) continue
+    const value = body[field]
+    if (typeof value !== 'string') return sendError(reply, 400, code, `${field} must be a string`)
+    const text = value.trim()
+    if (text.length > limit) {
+      if (field == 'avatar') return sendError(reply, 413, 'AVATAR_TOO_LARGE', 'Avatar must not exceed 200KB')
+      return sendError(reply, 400, code, `${field} must not exceed ${limit} characters`)
+    }
+    profile[field] = text
+  }
+  if (Object.prototype.hasOwnProperty.call(body, 'gender')) {
+    if (typeof body.gender !== 'string') return sendError(reply, 400, 'INVALID_GENDER', 'Gender must be male, female or unknown')
+    const gender = body.gender.trim() || 'unknown'
+    if (gender != 'male' && gender != 'female' && gender != 'unknown') {
+      return sendError(reply, 400, 'INVALID_GENDER', 'Gender must be male, female or unknown')
+    }
+    profile.gender = gender
+  }
   const user = getRequiredAuthUser(request)
-  const updatedUser = getAccountStore().updateUser(user.id, {
-    displayName: getOptionalProfileString(request.body.displayName, 100),
-    avatar: getOptionalProfileString(request.body.avatar, 200 * 1024),
-    gender: getGender(request.body.gender),
-    signature: getOptionalProfileString(request.body.signature, 140),
-  })
-  return { profile: toProfile(getAccountStore().findManagedUserById(updatedUser.id)) }
+  const previousUser = { ...user }
+  try {
+    const updatedUser = getAccountStore().updateUser(user.id, profile)
+    return { profile: toProfile(getAccountStore().findManagedUserById(updatedUser.id)) }
+  } catch {
+    // updateUser mutates the managed user before writing; restore it if saving fails.
+    for (const key of Object.keys(user) as Array<keyof typeof user>) delete user[key]
+    Object.assign(user, previousUser)
+    return sendError(reply, 500, 'PROFILE_SAVE_FAILED', 'Failed to save profile')
+  }
 }
 
 const buildPlaylistSummary = async(username: string) => {

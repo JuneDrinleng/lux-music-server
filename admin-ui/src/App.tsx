@@ -10,7 +10,7 @@ import {
   UsersSection,
 } from '@/components/pages'
 import { Toast } from '@/components/primitives'
-import { adminApi, authApi, getToken, meApi, setToken } from '@/lib/api'
+import { ApiError, adminApi, authApi, getToken, meApi, setToken } from '@/lib/api'
 import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, SectionId, UserView } from '@/types'
 
 const navAdminOnly: Partial<Record<SectionId, boolean>> = {
@@ -74,12 +74,21 @@ function App() {
         await loadBootstrap()
         return
       }
-      const data = await authApi.me()
+      let data
+      try {
+        data = await authApi.me()
+      } catch (error) {
+        if (error instanceof ApiError && error.status == 401) {
+          setToken('')
+          setMe(null)
+          await loadBootstrap()
+          return
+        }
+        throw error
+      }
       await loadDashboard(data.user)
-    } catch {
-      setToken('')
-      setMe(null)
-      await loadBootstrap()
+    } catch (error) {
+      notify(error instanceof Error ? error.message : '加载失败')
     } finally {
       setLoading(false)
     }

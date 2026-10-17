@@ -487,7 +487,7 @@ export function AccountSection({
         <div className="lux-card">
           <button type="button" className="lux-row" onClick={onLogout}>
             <IconCircle tone="logout"><IconLogout /></IconCircle>
-            <div className="t"><b style={{ color: 'var(--danger)' }}>退出登录</b><span>清除本机登录状态</span></div>
+            <div className="t"><b style={{ color: 'var(--danger)' }}>退出登录</b><span>会让此账号在所有浏览器的后台登录失效</span></div>
             <IconChevron className="chev" />
           </button>
         </div>
