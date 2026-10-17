@@ -5,6 +5,7 @@ import type { LuxManagedUser } from '@/account/types'
 
 export interface AuthRequest extends FastifyRequest {
   authUser?: LuxManagedUser
+  authSessionId?: string
 }
 
 export const getBearerToken = (request: FastifyRequest) => {
@@ -13,7 +14,7 @@ export const getBearerToken = (request: FastifyRequest) => {
   return authorization.substring('Bearer '.length).trim() || null
 }
 
-export const getAuthUser = (request: FastifyRequest): LuxManagedUser | null => {
+export const getAuthUser = (request: AuthRequest): LuxManagedUser | null => {
   const token = getBearerToken(request)
   if (!token) return null
   const store = getAccountStore()
@@ -21,6 +22,10 @@ export const getAuthUser = (request: FastifyRequest): LuxManagedUser | null => {
   if (!payload) return null
   const user = store.findManagedUserById(payload.sub)
   if (!user || user.status != 'active' || user.sessionVersion != payload.sessionVersion) return null
+  if (payload.sid !== undefined) {
+    if (typeof payload.sid != 'string' || !store.sessions.isActive(payload.sid, user.id)) return null
+    request.authSessionId = payload.sid
+  }
   return user
 }
 

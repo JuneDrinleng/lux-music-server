@@ -81,3 +81,19 @@ export interface PublicUserInfo {
   source: LuxUserSource
   status: LuxUserStatus
 }
+
+export interface LuxSession {
+  id: string
+  userId: string
+  deviceId?: string
+  deviceName?: string
+  platform?: string
+  createdAt: number
+  lastActiveAt: number
+  refreshTokenHash: string
+  /** Each session is one refresh family; retain spent hashes for replay detection. */
+  generation: number
+  previousRefreshTokenHashes: string[]
+  revokedAt?: number
+  expiresAt: number
+}

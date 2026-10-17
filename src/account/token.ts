@@ -3,6 +3,7 @@ import { Buffer } from 'node:buffer'
 import type { LuxUserRole } from './types'
 
 interface TokenPayload {
+  sid?: string
   sub: string
   username: string
   role: LuxUserRole
@@ -22,6 +23,8 @@ export const createToken = ({
   role,
   sessionVersion,
   secret,
+  sid,
+  issuedAt = Date.now(),
   ttlMs = 1000 * 60 * 60 * 24 * 14,
 }: {
   userId: string
@@ -29,12 +32,15 @@ export const createToken = ({
   role: LuxUserRole
   sessionVersion: number
   secret: string
+  sid?: string
+  issuedAt?: number
   ttlMs?: number
 }) => {
-  const now = Date.now()
+  const now = issuedAt
   const header = encode({ alg: 'HS256', typ: 'JWT' })
   const payload = encode({
     sub: userId,
+    ...(sid === undefined ? {} : { sid }),
     username,
     role,
     sessionVersion,
