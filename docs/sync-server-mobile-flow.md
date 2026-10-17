@@ -351,6 +351,8 @@ Lux 模式与 LX 模式的差异只在“如何获取 `KeyInfo`”：
 
 握手：服务端 `featureVersion.playHistory` 为 `1`（`list` / `dislike` 仍是 `1`）。客户端在 `getEnabledFeatures` 的返回值里带 `playHistory: true` 才算启用。没带这个字段的旧客户端会被当成不支持，服务端不会向它发起新的远程调用。`finished()` 之后客户端再拉推记录。
 
+服务端同时在 `getEnabledFeatures` 的能力参数中公布 `featureVersion['playHistory.outcome'] = 1`，表示支持可选的 `completed` / `skipped` 字段。无需单独启用此子能力，客户端仍返回 `playHistory: true`；旧客户端忽略未知能力键即可。
+
 消息名（message2call 的方法路径，各一段）：
 
 | 方向 | 方法名 | 请求 | 响应 |
@@ -367,6 +369,8 @@ Lux 模式与 LX 模式的差异只在“如何获取 `KeyInfo`”：
   startedAt: number
   endedAt: number
   listenedMs: number
+  completed?: boolean // 播放到结尾或达到客户端自行决定的完成阈值
+  skipped?: boolean // 用户跳过
   song: {
     source: string
     songmid: string
@@ -381,7 +385,8 @@ Lux 模式与 LX 模式的差异只在“如何获取 `KeyInfo`”：
 
 语义：
 
-- 按用户合并所有设备。`id` 已存在则忽略（不更新、不另存一条），因此同一条记录重试是幂等的。
+- 按用户合并所有设备。`id` 已存在则忽略（不更新、不另存一条），因此同一条记录重试是幂等的。首次写入的版本（包括结果字段）优先，批内重复和重启后重试也一样。
+- `completed` / `skipped` 可分别省略；存在时必须为 boolean（`null` 等其他类型非法）。两者同时为 `true` 时按现有校验方式拒绝整批，不归一化。服务端不推断结果，原样保存和返回 `true` / `false`；旧记录不补 `false`，缺少的字段保持缺少。
 - 新记录写入服务端单调游标 `receivedAt`（只存在磁盘上，不出现在响应的 `records` 里）。
 - `push` 单批最多 500 条。任一记录形状或长度不合法时，整批拒绝，不写入。
 - `pull` 返回 `receivedAt > since` 的记录，按 `receivedAt` 升序，每页最多 1000 条。下一次请求把本次响应的 `cursor` 当作 `since`。本页有数据时，`cursor` 是本页最后一条的 `receivedAt`；本页为空时，`cursor` 不会小于本次请求的 `since`。

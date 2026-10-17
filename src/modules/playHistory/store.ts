@@ -26,7 +26,7 @@ const toPublic = (record: StoredRecord): LX.Sync.PlayHistory.Record => {
   if (record.song.albumName != null) song.albumName = record.song.albumName
   if (record.song.interval != null) song.interval = record.song.interval
   if (record.song.img != null) song.img = record.song.img
-  return {
+  const result: LX.Sync.PlayHistory.Record = {
     id: record.id,
     deviceId: record.deviceId,
     startedAt: record.startedAt,
@@ -34,6 +34,9 @@ const toPublic = (record: StoredRecord): LX.Sync.PlayHistory.Record => {
     listenedMs: record.listenedMs,
     song,
   }
+  if (record.completed !== undefined) result.completed = record.completed
+  if (record.skipped !== undefined) result.skipped = record.skipped
+  return result
 }
 
 /**

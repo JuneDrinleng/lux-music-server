@@ -17,6 +17,10 @@ declare namespace LX {
         startedAt: number
         endedAt: number
         listenedMs: number
+        /** Played to the end or reached the client's completion threshold. */
+        completed?: boolean
+        /** User skipped this play. Cannot be true together with completed. */
+        skipped?: boolean
         song: Song
       }
 
