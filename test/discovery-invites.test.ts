@@ -9,7 +9,11 @@ import { parseJson, resetTestState } from './helpers'
 
 describe('server discovery and invite registration', () => {
   let app: FastifyInstance
-  const env = { LUX_VERSION: process.env.LUX_VERSION, LUX_MIN_CLIENT_VERSION: process.env.LUX_MIN_CLIENT_VERSION }
+  const env = {
+    LUX_VERSION: process.env.LUX_VERSION,
+    LUX_MIN_CLIENT_VERSION: process.env.LUX_MIN_CLIENT_VERSION,
+    LUX_ADMIN_CONTACT: process.env.LUX_ADMIN_CONTACT,
+  }
   const post = (url: string, payload: Record<string, unknown>) => app.inject({ method: 'POST', url, payload })
   const register = (inviteCode: string, username = 'new-user') => post('/api/auth/register', { inviteCode, username, password: 'secret' })
   const invite = async(displayName?: string) => {
@@ -25,6 +29,7 @@ describe('server discovery and invite registration', () => {
   beforeEach(() => {
     delete process.env.LUX_VERSION
     delete process.env.LUX_MIN_CLIENT_VERSION
+    delete process.env.LUX_ADMIN_CONTACT
     app = resetTestState()
   })
   afterEach(async() => {
@@ -42,6 +47,7 @@ describe('server discovery and invite registration', () => {
     assert.equal(res.headers['cache-control'], 'no-store')
     const expected = {
       name: global.lx.config.serverName, version, packageVersion: version, minClientVersion: null, publicUrl: null,
+      adminContact: null,
       mcp: { tokens: true },
       registration: { inviteOnly: true, enabled: true }, features: ['sessions', 'refresh', 'me-sessions', 'invite-check'],
     }
@@ -51,6 +57,73 @@ describe('server discovery and invite registration', () => {
     assert.deepEqual(parseJson((await app.inject({ url: '/api/server-info' })).body), {
       ...expected, version: '1.2.3-dev.4', minClientVersion: '1.0.0',
     })
+  })
+
+  it('uses the trimmed env contact ahead of an admin without exposing a username', async() => {
+    await getAccountStore().createUser({ username: 'admin', password: 'secret', role: 'admin', displayName: 'Admin' })
+    process.env.LUX_ADMIN_CONTACT = '  Contact the music team  \n'
+    const res = await app.inject({ url: '/api/server-info' })
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(parseJson(res.body).adminContact, { name: 'Contact the music team' })
+  })
+
+  it('limits the env contact to 100 characters even without an admin', async() => {
+    process.env.LUX_ADMIN_CONTACT = `  ${'a'.repeat(101)}  `
+    const res = await app.inject({ url: '/api/server-info' })
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(parseJson(res.body).adminContact, { name: 'a'.repeat(100) })
+  })
+
+  for (const displayName of ['Friendly Admin', undefined, '']) {
+    it(`uses the first active admin with ${displayName ? 'display name' : `username fallback (${String(displayName)})`}`, async() => {
+      const store = getAccountStore()
+      await store.createUser({ username: 'regular-user', password: 'secret' })
+      await store.createUser({ username: 'first-admin', password: 'secret', role: 'admin', displayName })
+      await store.createUser({ username: 'second-admin', password: 'secret', role: 'admin' })
+      const res = await app.inject({ url: '/api/server-info' })
+      assert.equal(res.statusCode, 200)
+      assert.deepEqual(parseJson(res.body).adminContact, { name: displayName || 'first-admin', username: 'first-admin' })
+    })
+  }
+
+  it('treats a whitespace-only env contact as unset', async() => {
+    process.env.LUX_ADMIN_CONTACT = ' \t\n '
+    const store = getAccountStore()
+    await store.createUser({ username: 'admin', password: 'secret', role: 'admin' })
+    assert.deepEqual(parseJson((await app.inject({ url: '/api/server-info' })).body).adminContact, { name: 'admin', username: 'admin' })
+  })
+
+  it('returns null when there are users but no admin', async() => {
+    await getAccountStore().createUser({ username: 'regular-user', password: 'secret' })
+    assert.equal(parseJson((await app.inject({ url: '/api/server-info' })).body).adminContact, null)
+  })
+
+  it('skips disabled admins and returns null when no active admin remains', async() => {
+    const store = getAccountStore()
+    const disabled = await store.createUser({ username: 'disabled-admin', password: 'secret', role: 'admin' })
+    const active = await store.createUser({ username: 'active-admin', password: 'secret', role: 'admin' })
+    store.updateUser(disabled.id, { status: 'disabled' })
+    assert.deepEqual(parseJson((await app.inject({ url: '/api/server-info' })).body).adminContact, { name: active.username, username: active.username })
+    // A persisted store may contain only disabled admins; the update API prevents this state.
+    store.findManagedUserById(active.id)!.status = 'disabled'
+    assert.equal(parseJson((await app.inject({ url: '/api/server-info' })).body).adminContact, null)
+  })
+
+  it('exposes only the admin name and username, never other account fields', async() => {
+    const store = getAccountStore()
+    const admin = await store.createUser({ username: 'admin', password: 'secret', role: 'admin', displayName: 'Friendly Admin' })
+    store.updateUser(admin.id, { avatar: 'private-avatar', signature: 'private-signature', gender: 'unknown' })
+    const account = store.findManagedUserById(admin.id)!
+    Object.assign(account, { email: 'private@example.com' })
+    const res = await app.inject({ url: '/api/server-info' })
+    assert.equal(res.statusCode, 200)
+    assert.deepEqual(parseJson(res.body).adminContact, { name: 'Friendly Admin', username: 'admin' })
+    for (const field of Object.keys(account).filter(field => field != 'username')) {
+      assert.equal(res.body.includes(`"${field}":`), false, field)
+    }
+    for (const value of [account.id, account.loginPasswordHash, account.lxSyncCode, 'private@example.com', 'private-avatar', 'private-signature']) {
+      assert.equal(res.body.includes(value), false)
+    }
   })
 
   for (const displayName of ['Friendly Inviter', undefined]) {

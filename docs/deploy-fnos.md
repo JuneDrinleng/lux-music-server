@@ -15,6 +15,8 @@
 
 默认镜像是 `docker.io/junedrinleng/lux-music-server:latest`；开发版改为 `:dev`，GHCR 备用地址见 Compose 注释。镜像已有 `/hello` 健康检查，无需重复设置；Docker 日志按每份 10MB、最多 3 份轮转。
 
+可选填写 `.env` 中的 `LUX_ADMIN_CONTACT` 作为公开管理员联系方式；去除首尾空白后截取前 100 个字符，在 `GET /api/server-info` 中仅返回 `adminContact: { name: "填写的内容" }`。留空时使用账号库中第一个启用管理员的显示名（为空则用用户名），返回 `{ name, username }`；无启用管理员时为 `null`。该字段不包含邮箱、ID、密码哈希或其他账号字段，填写的文字会公开显示。
+
 ## 2. 首次启动与管理员
 
 **June 在 NAS 操作：** 查看容器日志和健康状态，先从局域网访问 `http://<NAS IP>:9527/hello`、`/admin`。
