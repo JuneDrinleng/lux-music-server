@@ -33,7 +33,19 @@ declare namespace LX {
         status: 'pending'
       }
       interface RequestsPush { roomId: string, requests: SongRequest[], version: number }
+      interface ChatMessage {
+        id: number
+        roomId: string
+        senderId: string // Canonical device id, stable across credential aliases.
+        displayName: string
+        text: string
+        at: number
+        clientMsgId: string
+      }
+      interface ChatPage { messages: ChatMessage[], hasMore: boolean }
+      interface ChatPush { roomId: string, message: ChatMessage }
       interface RoomSnapshot {
+        chat?: ChatMessage[] // Last 50, newest first; only for together.chat clients.
         roomId: string           // UUID，每次开房都不同
         code: string             // 6 位数字邀请码
         hostId: string           // memberId
@@ -121,6 +133,8 @@ declare namespace LX {
       'together:request:reject': (req: { requestId: string }) => LuxResult<null>
       'together:request:remove': (req: { requestId: string }) => LuxResult<null>
       'together:request:reorder': (req: { requestIds: string[] }) => LuxResult<null>
+      'together:chat:send': (req: { text: string, clientMsgId: string }) => LuxResult<Together.ChatMessage>
+      'together:chat:history': (req: { roomId: string, beforeId?: number, limit?: number }) => LuxResult<Together.ChatPage>
       'together:reaction': (req: { emoji: string }) => LuxResult<null>
       'together:ping': (req: { t0: number }) => LuxResult<Together.PingResult>
     }>
@@ -129,6 +143,7 @@ declare namespace LX {
       'together:onMemberChanged': (push: Together.MemberChangedPush) => void
       'together:onHostChanged': (push: Together.HostChangedPush) => void
       'together:onRequests': (push: Together.RequestsPush) => void
+      'together:onChat': (push: Together.ChatPush) => void
       'together:onReaction': (push: Together.ReactionPush) => void
       'together:onRoomClosed': (push: Together.RoomClosedPush) => void
     }>

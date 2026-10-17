@@ -44,6 +44,8 @@ declare namespace LX {
       together?: boolean
       /** Opt in to ephemeral together:onReaction pushes. */
       'together.reaction'?: boolean
+      /** Opt in to persistent chat, history and together:onChat pushes. */
+      'together.chat'?: boolean
       /** Opt in to song requests and together:onRequests pushes. */
       'together.request'?: boolean
     }

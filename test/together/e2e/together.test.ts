@@ -10,6 +10,7 @@
  * Run with npm test on Node >=24 in an environment that permits loopback TCP.
  */
 import assert from 'node:assert/strict'
+import { ChatStore } from '../../../src/modules/together/chatStore'
 import { randomBytes } from 'node:crypto'
 import { after, afterEach, before, beforeEach, describe, it } from 'node:test'
 import { song, unwrap } from '../fakes'
@@ -60,6 +61,34 @@ describe('together: two real WebSocket clients', { concurrency: false, timeout: 
   const waitOffline = async(client: TogetherClient, memberId: string) => {
     await client.waitFor(() => client.pushes.some(p => p.method == MEMBERS && p.payload.change.type == 'offline' && p.payload.change.memberId == memberId), 'offline push')
   }
+
+  it('persists chat across reconnects and store recreation without affecting old clients', async() => {
+    const host = await fixture.connect('host', { chat: true })
+    const member = await fixture.connect('member', { chat: true })
+    const old = await fixture.connect('member', {}, true, fixture.credentials.old)
+    assert.equal((host.handshake[0].args[1] as Record<string, number>)['together.chat'], 1)
+    const room = unwrap(await host.createRoom())
+    unwrap(await member.joinRoom(room.code))
+    assert.equal('chat' in unwrap(await old.joinRoom(room.code)), false)
+    const message = unwrap(await member.chatSend(' hello ', 'client-1'))
+    for (const client of [host, member]) {
+      await client.waitFor(() => pushesOf(client, 'together:onChat').length == 1, 'chat broadcast')
+      assert.deepEqual(pushesOf(client, 'together:onChat')[0].payload, { roomId: room.roomId, message })
+    }
+    assert.deepEqual(unwrap(await member.chatSend('retry', 'client-1')), message)
+    await member.close()
+    await waitOffline(host, fixture.credentials.member.clientId)
+    const reconnect = await fixture.connect('member', { chat: true })
+    assert.deepEqual(unwrap(await reconnect.joinRoom(room.code)).chat, [message])
+    assert.deepEqual(unwrap(await reconnect.chatHistory(room.roomId)), { messages: [message], hasMore: false })
+    assert.deepEqual(new ChatStore().history(room.roomId).messages, [message])
+    assert.equal(old.frames.some(frame => frame.path == 'together:onChat'), false)
+    assert.equal(old.rpcErrors.length, 0)
+    assert.equal(unwrap(await old.ping(42)).t0, 42)
+    unwrap(await host.closeRoom(room.roomId))
+    assert.equal((await reconnect.chatHistory(room.roomId)).ok, false)
+    assert.deepEqual(new ChatStore().history(room.roomId).messages, [message])
+  })
 
   it('requests and approves once across host, member and old-client WebSockets', { timeout: 5000 }, async() => {
     const host = await fixture.connect('host', { request: true })
