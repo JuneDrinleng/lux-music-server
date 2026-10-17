@@ -3,7 +3,7 @@ import { sync as dislikeSync } from './dislike'
 import { sync as playHistorySync } from './playHistory'
 import { PLAY_HISTORY_FEATURE_VERSION, PLAY_HISTORY_OUTCOME_FEATURE_VERSION } from './playHistory/protocol'
 import { sync as togetherSync } from './together'
-import { TOGETHER_FEATURE_VERSION } from './together/protocol'
+import { TOGETHER_FEATURE_VERSION, TOGETHER_REACTION_FEATURE_VERSION } from './together/protocol'
 
 export const callObj = Object.assign({},
   listSync.handler,
@@ -35,4 +35,5 @@ export const featureVersion = {
   playHistory: PLAY_HISTORY_FEATURE_VERSION,
   'playHistory.outcome': PLAY_HISTORY_OUTCOME_FEATURE_VERSION,
   together: TOGETHER_FEATURE_VERSION,
+  'together.reaction': TOGETHER_REACTION_FEATURE_VERSION,
 } as const

@@ -61,6 +61,39 @@ describe('together: two real WebSocket clients', { concurrency: false, timeout: 
     await client.waitFor(() => client.pushes.some(p => p.method == MEMBERS && p.payload.change.type == 'offline' && p.payload.change.memberId == memberId), 'offline push')
   }
 
+  it('delivers reactions to opted-in members and keeps an old client session working', { timeout: 5000 }, async() => {
+    const host = await fixture.connect('host', { reaction: true })
+    const member = await fixture.connect('member', { reaction: true })
+    const old = await fixture.connect('member', {}, true, fixture.credentials.old)
+    const advertised = host.handshake[0].args[1] as Record<string, number>
+    assert.equal(advertised['together.reaction'], 1)
+    const rejected = await member.reaction('👍')
+    assert.equal(rejected.ok, false)
+    if (!rejected.ok) assert.equal(rejected.code, 'NOT_IN_ROOM')
+    const room = unwrap(await host.createRoom())
+    unwrap(await member.joinRoom(room.code))
+    const joined = unwrap(await old.joinRoom(room.code))
+    unwrap(await host.reaction('👍'))
+    for (const client of [host, member]) {
+      await client.waitFor(() => pushesOf(client, 'together:onReaction').length == 1, 'reaction push')
+      assert.deepEqual(pushesOf(client, 'together:onReaction')[0].payload, {
+        roomId: room.roomId, memberId: host.credentials.clientId, displayName: 'Host', emoji: '👍', at: fixture.now(),
+      })
+    }
+    // A round trip drains earlier frames; inspect the wire as well as registered pushes.
+    assert.deepEqual(unwrap(await old.getRoom()), joined)
+    assert.equal(old.frames.some(frame => frame.path == 'together:onReaction'), false)
+    assert.equal(pushesOf(old, 'together:onReaction').length, 0)
+    assert.deepEqual(unwrap(await old.ping(42)), { t0: 42, serverTime: fixture.now() })
+    await member.onFeatureChanged({ 'together.reaction': false })
+    unwrap(await host.reaction('🔥'))
+    await host.waitFor(() => pushesOf(host, 'together:onReaction').length == 2, 'second sender echo')
+    unwrap(await member.ping(1))
+    assert.equal(pushesOf(member, 'together:onReaction').length, 1)
+    assert.equal(unwrap(await member.getRoom())!.version, joined.version)
+    results.set('reaction capability and old client compatibility', 'pass')
+  })
+
   it('1. creates and joins across two authenticated managed accounts', { timeout: 5000 }, async() => {
     const { host, member, room } = await pair()
     assert.match(room.code, /^[1-9]\d{5}$/)

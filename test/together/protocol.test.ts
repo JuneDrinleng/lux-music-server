@@ -5,8 +5,9 @@ import { getAccountStore } from '../../src/account/store'
 import { featureVersion } from '../../src/modules'
 import * as listSyncModule from '../../src/modules/list/sync/sync'
 import { getRoomManager, RoomManager, setRoomManager } from '../../src/modules/together'
-import { TOGETHER_METHODS } from '../../src/modules/together/protocol'
+import { TOGETHER_METHODS, TOGETHER_REACTION_EMOJIS } from '../../src/modules/together/protocol'
 import handler from '../../src/modules/together/sync/handler'
+import { normalizeReactionEmoji } from '../../src/modules/together/validate'
 import { sync as togetherSync } from '../../src/modules/together/sync/sync'
 import { callObj } from '../../src/server/sync'
 import featureHandler from '../../src/server/sync/handler'
@@ -32,9 +33,36 @@ describe('together protocol wiring', () => {
 
   it('advertises together=1 and exposes every method on callObj', () => {
     assert.equal(featureVersion.together, 1)
+    assert.equal(featureVersion['together.reaction'], 1)
     assert.equal(featureVersion.list, 1)
     assert.equal(featureVersion.dislike, 1)
     for (const method of Object.values(TOGETHER_METHODS)) assert.equal(typeof (callObj as Record<string, unknown>)[method], 'function', method)
+  })
+
+  it('validates the reaction allowlist and rejects malformed RPC payloads without broadcasts', async() => {
+    const alice = createFakeSocket('c_alice', 'alice')
+    alice.feature['together.reaction'] = true
+    unwrap(await handler['together:createRoom'](alice))
+    for (const emoji of TOGETHER_REACTION_EMOJIS) {
+      assert.equal(normalizeReactionEmoji(emoji), emoji)
+      assert.equal(normalizeReactionEmoji(` ${emoji} `), emoji)
+    }
+    for (const emoji of [undefined, null, 1, {}, [], '', ' ', 'hello', '😀', '❤', '👍👍', 'x'.repeat(17), '👍\n', '\t👍', '👍\u0000', '👍\u0085', '👍\u2028']) {
+      assert.equal(normalizeReactionEmoji(emoji), null)
+      const result = await handler['together:reaction'](alice, { emoji } as any)
+      assert.equal(result.ok, false)
+      if (!result.ok) assert.equal(result.code, 'INVALID_PARAMS')
+    }
+    for (const req of [null, [], '👍', {}]) {
+      const result = await handler['together:reaction'](alice, req as any)
+      assert.equal(result.ok, false)
+      if (!result.ok) assert.equal(result.code, 'INVALID_PARAMS')
+    }
+    assert.equal(alice.takePushes().length, 0)
+    unwrap(await handler['together:reaction'](alice, { emoji: ' 👍 ' }))
+    assert.equal(alice.takePushes('together:onReaction')[0].payload.emoji, '👍')
+    alice.moduleReadys.together = false
+    await assert.rejects(handler['together:reaction'](alice, { emoji: '👍' }), /together is not enabled/)
   })
 
   it('only enables together when negotiated, and throws when it is not', async() => {
@@ -57,14 +85,18 @@ describe('together protocol wiring', () => {
     assert.equal(socket.moduleReadys.together, false)
 
     let togetherFinished = 0
-    socket.remote.getEnabledFeatures = async() => ({ together: true })
+    socket.remote.getEnabledFeatures = async() => ({ together: true, 'together.reaction': true })
     socket.remote.together_sync_finished = async() => { togetherFinished++ }
     await sync(socket)
     assert.equal(socket.moduleReadys.together, true)
     assert.equal(togetherFinished, 1)
     assert.equal(socket.feature.together, true)
+    assert.equal(socket.feature['together.reaction'], true)
     assert.equal(unwrap(await handler['together:ping'](socket, { t0: 5 })).t0, 5)
 
+    await featureHandler.onFeatureChanged(socket, { 'together.reaction': false })
+    assert.equal(socket.feature['together.reaction'], false)
+    assert.equal(socket.moduleReadys.together, true)
     await featureHandler.onFeatureChanged(socket, { together: false })
     assert.equal(socket.moduleReadys.together, false)
   })

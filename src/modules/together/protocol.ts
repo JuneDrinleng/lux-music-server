@@ -5,6 +5,10 @@
 import { syncLog } from '@/utils/log4js'
 
 export const TOGETHER_FEATURE_VERSION = 1
+export const TOGETHER_REACTION_FEATURE_VERSION = 1
+
+/** Only these exact emoji sequences are supported (after trimming spaces). */
+export const TOGETHER_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👏'] as const
 
 export const TOGETHER_METHODS = {
   createRoom: 'together:createRoom',
@@ -15,6 +19,7 @@ export const TOGETHER_METHODS = {
   hostUpdateState: 'together:hostUpdateState',
   hostUpdateQueue: 'together:hostUpdateQueue',
   transferHost: 'together:transferHost',
+  reaction: 'together:reaction',
   ping: 'together:ping',
 } as const
 
@@ -23,6 +28,7 @@ export const TOGETHER_PUSHES = {
   memberChanged: 'together:onMemberChanged',
   hostChanged: 'together:onHostChanged',
   roomClosed: 'together:onRoomClosed',
+  reaction: 'together:onReaction',
 } as const
 
 export const TOGETHER_LIMITS = {
@@ -31,6 +37,10 @@ export const TOGETHER_LIMITS = {
   sampledAtSkewMs: 5000,
   joinFailures: 10,
   joinFailureWindowMs: 60_000,
+  reactions: 5,
+  reactionWindowMs: 3000,
+  reactionsPerMinute: 60,
+  reactionMinuteMs: 60_000,
   hostUpdates: 10,
   hostUpdateWindowMs: 1000,
 } as const

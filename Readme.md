@@ -362,3 +362,23 @@ HTTP API 的真实 IP 和限流另由 `LUX_TRUST_PROXY` 控制（默认关闭）
 默认构建 `linux/amd64` 镜像。若后续需要 ARM 服务器镜像，可在 workflow 中重新启用 `linux/arm64` 平台。
 
 也可以看此 Issue 提供的历史 Docker 解决方案：<https://github.com/lyswhut/lx-music-sync-server/issues/4>
+
+
+### Listen Together reactions (WebSocket)
+
+The server advertises `together.reaction: 1`. Clients opt in by returning
+`'together.reaction': true` alongside `together: true` in `getEnabledFeatures`
+(or updating it through `onFeatureChanged`). Active room members call
+`together:reaction` with `{ emoji }`; success returns `{ ok: true, data: null }`.
+The exported `TOGETHER_REACTION_EMOJIS` allowlist is
+`['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👏']`. Surrounding spaces are trimmed;
+control characters and newlines are rejected, even around a valid emoji.
+
+`together:onReaction` carries `{ roomId, memberId, displayName, emoji, at }`,
+using the server's member identity and timestamp in milliseconds. It goes to
+all opted-in room sockets, **including the sender**. Clients without the
+capability receive no reaction RPC. Reactions are never persisted, included
+in snapshots, or counted as room version changes. Each membership allows
+5 reactions per sliding 3 seconds and 60 per sliding minute; reconnecting
+preserves these counters. Invalid emoji return `INVALID_PARAMS`, non-members
+return `NOT_IN_ROOM`, and excess reactions return `RATE_LIMITED` with no push.
