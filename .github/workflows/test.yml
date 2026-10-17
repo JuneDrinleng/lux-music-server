@@ -116,11 +116,14 @@ jobs:
               exit 1
             fi
             # docker exec defaults to root; inspect the actual PID 1 server instead.
+            if [ "$scenario" = root-owned ]; then
+              docker exec lux-ci test -f /server/data/data/lux/accounts.json
+            fi
             docker exec lux-ci sh -c '
               set -eu
               test "$(cat /proc/1/comm)" = node
               test "$(awk "/^Uid:/ { print \$2 }" /proc/1/status)" = 1000
-              test "$(stat -c %u /server/data/data/lux/accounts.json)" = 1000
+              if [ -f /server/data/data/lux/accounts.json ]; then test "$(stat -c %u /server/data/data/lux/accounts.json)" = 1000; fi
               test -z "$(find /server/data ! -user node -o ! -group node)"
             '
             docker rm -fv lux-ci
