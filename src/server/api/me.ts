@@ -68,6 +68,34 @@ export const registerMeApi = async(app: FastifyInstance) => {
   app.post('/api/me/profile', { preHandler: requireAuth }, updateProfile)
   app.patch('/api/me/profile', { preHandler: requireAuth }, updateProfile)
 
+  app.get('/api/me/sessions', { preHandler: requireAuth }, async(request: AuthRequest) => {
+    const user = getRequiredAuthUser(request)
+    const sessions = getAccountStore().sessions.listForUser(user.id).map(session => ({
+      id: session.id,
+      deviceId: session.deviceId,
+      deviceName: session.deviceName,
+      platform: session.platform,
+      createdAt: session.createdAt,
+      lastActiveAt: session.lastActiveAt,
+      current: session.id == request.authSessionId,
+    }))
+    return { sessions }
+  })
+
+  app.delete('/api/me/sessions/:id', { preHandler: requireAuth }, async(request: AuthRequest, reply) => {
+    const user = getRequiredAuthUser(request)
+    const { id } = request.params as { id: string }
+    if (!getAccountStore().sessions.revoke(id, user.id)) return reply.code(404).send({ message: 'Session not found' })
+    return { ok: true }
+  })
+
+  app.post('/api/me/sessions/revoke-others', { preHandler: requireAuth }, async(request: AuthRequest) => {
+    const user = getRequiredAuthUser(request)
+    // Legacy tokens have no sid, so there is no current session to keep: revoke all sessions.
+    const revoked = getAccountStore().sessions.revokeOthers(user.id, request.authSessionId)
+    return { ok: true, revoked }
+  })
+
   app.get('/api/me/devices', { preHandler: requireAuth }, async(request: AuthRequest) => {
     const user = getRequiredAuthUser(request)
     return { devices: (await getUserSpace(user.username).getDecices()).map(toPublicDevice) }
@@ -107,7 +135,7 @@ export const registerMeApi = async(app: FastifyInstance) => {
     const store = getAccountStore()
     const updatedUser = await store.changePassword(user.id, password)
     clearAuthFailures(ip, user.username)
-    // Password changes always revoke every sync credential.
+    // Password changes always revoke all sessions and sync keys; revokeOtherDevices is accepted for compatibility.
     const token = createToken({
       userId: user.id,
       username: user.username,

@@ -34,6 +34,7 @@ export class SessionStore {
     for (const session of sessions) session.revokedAt ??= this.clock()
     this.save()
     this.revocationListener?.(sessions)
+    return sessions.length
   }
 
   constructor(private readonly filePath: string, private readonly clock = Date.now) {
@@ -69,6 +70,12 @@ export class SessionStore {
     return this.data.sessions.some(s => s.id == id && s.userId == userId && s.revokedAt === undefined && s.expiresAt > this.clock())
   }
 
+  listForUser(userId: string) {
+    return this.data.sessions
+      .filter(s => s.userId == userId && s.revokedAt === undefined && s.expiresAt > this.clock())
+      .sort((a, b) => b.lastActiveAt - a.lastActiveAt)
+  }
+
   rotate(refreshToken: string) {
     const digest = hash(refreshToken)
     const session = this.data.sessions.find(s => s.refreshTokenHash == digest || s.previousRefreshTokenHashes.includes(digest))
@@ -88,8 +95,12 @@ export class SessionStore {
     return { session, refreshToken: nextToken }
   }
 
-  revoke(id: string) {
-    this.revokeMatching(s => s.id == id)
+  revoke(id: string, userId?: string) {
+    return this.revokeMatching(s => s.id == id && (userId === undefined || s.userId == userId))
+  }
+
+  revokeOthers(userId: string, keepId?: string) {
+    return this.revokeMatching(s => s.userId == userId && s.id != keepId && s.revokedAt === undefined)
   }
 
   revokeUser(userId: string) {

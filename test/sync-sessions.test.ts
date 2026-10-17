@@ -89,6 +89,40 @@ describe('sync key session lifecycle', { concurrency: false, timeout: 15000 }, (
     assert.equal(new UserDataManage(username).getClientKeyInfo(bound.clientId), null)
   })
 
+  it('self-service session deletion invalidates access, refresh and bound sync authentication', async() => {
+    await authenticate(bound, true)
+    const response = await app.inject({ method: 'DELETE', url: `/api/me/sessions/${login.sessionId}`, headers: headers(login.accessToken) })
+    assert.equal(response.statusCode, 200)
+    assert.deepEqual(parseJson(response.body), { ok: true })
+    assert.equal((await app.inject({ url: '/api/auth/me', headers: headers(login.accessToken) })).statusCode, 401)
+    assert.equal((await post('/api/auth/refresh', { refreshToken: login.refreshToken })).statusCode, 401)
+    assert.equal(stored(bound), null)
+    await authenticate(bound, false)
+    await authenticate(legacy, true)
+  })
+
+  it('revoke-others deletes other session keys and preserves current and sessionless keys', async() => {
+    const other = parseJson((await post('/api/auth/login', { username, password: 'secret-pass' })).body)
+    const otherKey = await issue(other.accessToken)
+    await authenticate(otherKey, true)
+    const response = await post('/api/me/sessions/revoke-others', {}, login.accessToken)
+    assert.equal(response.statusCode, 200)
+    assert.deepEqual(parseJson(response.body), { ok: true, revoked: 1 })
+    assert.equal(stored(otherKey), null)
+    await authenticate(otherKey, false)
+    await authenticate(bound, true)
+    await authenticate(legacy, true)
+  })
+
+  it('legacy revoke-others deletes all session keys while preserving sessionless keys', async() => {
+    const response = await post('/api/me/sessions/revoke-others')
+    assert.equal(response.statusCode, 200)
+    assert.deepEqual(parseJson(response.body), { ok: true, revoked: 1 })
+    assert.equal(stored(bound), null)
+    await authenticate(bound, false)
+    await authenticate(legacy, true)
+  })
+
   it('password change deletes both key types', async() => {
     const response = await post('/api/me/password', { oldPassword: 'secret-pass', password: 'new-pass', revokeOtherDevices: false })
     assert.equal(response.statusCode, 200, response.body)
