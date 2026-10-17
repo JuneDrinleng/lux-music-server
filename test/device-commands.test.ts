@@ -71,6 +71,59 @@ it('disconnect while waiting produces DEVICE_OFFLINE and malformed ACKs are reje
   await assert.rejects(dispatchCommand(bad.socket, input), code('DEVICE_INVALID_ACK'))
 })
 
+it('HTTP commands distinguish owned offline devices from unknown and foreign devices, including base64 IDs and aliases', async t => {
+  const { resetTestState } = await import('./helpers')
+  const { getAccountStore } = await import('../src/account/store')
+  const { getUserSpace, releaseUserSpace } = await import('../src/user')
+  const server = await import('../src/server/server')
+  const app = resetTestState()
+  const username = 'offline-unit'; const otherUsername = 'offline-other'
+  try {
+    const store = getAccountStore()
+    const user = await store.createUser({ username, password: 'offline-unit-password', role: 'admin' })
+    await store.createUser({ username: otherUsername, password: 'offline-other-password', role: 'user' })
+    const pat = store.pats.create(user.id, 'Offline', ['player:control'], 'never')
+    const id = 'known/device+id=='
+    const data = getUserSpace(username).dataManage
+    const keyInfo = { clientId: id, key: 'unit-key', deviceId: 'installation', deviceName: 'Phone', isMobile: true, lastConnectDate: Date.now() + 1000 }
+    data.saveClientKeyInfo(keyInfo)
+    data.saveClientKeyInfo({ ...keyInfo, clientId: 'historical-client', lastConnectDate: 1 })
+    // Reload through the real migration to group historical credentials.
+    releaseUserSpace(username, true)
+    const reloaded = getUserSpace(username).dataManage
+    assert.equal(reloaded.getDeviceClientId('historical-client'), id)
+    assert.equal(reloaded.getClientKeyInfo(id)!.clientId, id)
+    getUserSpace(otherUsername).dataManage.saveClientKeyInfo({ ...keyInfo, clientId: 'foreign/device+id==' })
+    const socket = peer(async() => ({ ok: true })).socket
+    socket.userInfo = { name: username } as LX.UserConfig
+    socket.keyInfo = reloaded.getClientKeyInfo('historical-client')!
+    socket.connectedAt = socket.lastActiveAt = 1
+    let connected = true
+    t.mock.method(server, 'broadcastListClients', (handler: (socket: LX.Socket) => void) => { if (connected) handler(socket) })
+    const headers = { authorization: `Bearer ${pat.token}` }
+    const listed = await app.inject({ method: 'GET', url: '/api/v1/devices', headers })
+    assert.equal(listed.json().items[0].deviceId, id)
+    connected = false
+    const command = (target: string) => app.inject({ method: 'POST', url: `/api/v1/devices/${target}/commands`, headers, payload: input })
+    // A raw slash changes the route, reproducing the intermittent e2e 404.
+    assert.equal((await command(id)).statusCode, 404)
+    for (const [target, status, expected] of [
+      [id, 503, 'DEVICE_OFFLINE'],
+      ['historical-client', 503, 'DEVICE_OFFLINE'],
+      ['unknown/device+id==', 404, 'NOT_FOUND'],
+      ['foreign/device+id==', 404, 'NOT_FOUND'],
+    ] as const) {
+      const response = await command(encodeURIComponent(target))
+      assert.equal(response.statusCode, status)
+      assert.equal(response.json().code, expected)
+    }
+  } finally {
+    releaseUserSpace(username, true)
+    releaseUserSpace(otherUsername, true)
+    await app.close()
+  }
+})
+
 it('HTTP routes reuse the service for ownership, capability, scope, ACKs, auditing and command rate limits', async t => {
   const { resetTestState } = await import('./helpers')
   const { getAccountStore } = await import('../src/account/store')

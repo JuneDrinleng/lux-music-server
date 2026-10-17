@@ -87,7 +87,7 @@ it('HTTP and SDK MCP commands target only capable owned WS peers, propagate ACKs
     assert.ok(activity.every(a => !a.summary.includes('"meta"')))
     await device.close()
     const fresh = store.pats.create(fixture.users.host.id, 'Offline', ['player:control'], 'never')
-    for (const route of [`/${id}/commands`, '/commands']) {
+    for (const route of [`/${encodeURIComponent(id)}/commands`, '/commands']) {
       const offline = await http(route, play, fresh.token)
       assert.equal(offline.status, 503); assert.equal(offline.body.code, 'DEVICE_OFFLINE')
     }
@@ -101,7 +101,7 @@ it('HTTP and SDK MCP commands target only capable owned WS peers, propagate ACKs
     assert.deepEqual((await http('/commands', playback, fresh.token)).body, { ok: true, state: 'first' })
     await first.onFeatureChanged({ 'device.command': false })
     assert.deepEqual((await http('/commands', playback, fresh.token)).body, { ok: true, state: 'second' })
-    assert.equal((await http(`/${id}/commands`, playback, fresh.token)).status, 409)
+    assert.equal((await http(`/${encodeURIComponent(id)}/commands`, playback, fresh.token)).status, 409)
     assert.equal((await http('', undefined, fresh.token)).body.items.find((d: any) => d.deviceId == id).supportsCommands, false)
     await second.close()
   } finally {
