@@ -34,6 +34,7 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 - **连接码（lxSyncCode）**：投影为 `config.users[].password`，用于 LX 客户端 `/ah`。
 - 管理台「查看/重置连接码」改的是 `lxSyncCode`，不会改登录密码。
 - 改登录密码会 `sessionVersion++`，使已有 JWT 失效；重置连接码只影响同步鉴权。
+- 自助修改密码（`POST /api/me/password`）需提交 `oldPassword` 和新 `password`；成功后返回 `{ ok: true, token, user }`，Web 管理台保存新 token 以保持当前登录。可选的 `revokeOtherDevices` 必须是布尔值；本阶段不撤销同步设备密钥，完整行为将在后续 PR 实现。
 
 对仅存在于 `config.js` / `LX_USER_*` 的遗留用户：
 

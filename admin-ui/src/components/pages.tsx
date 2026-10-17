@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { adminApi, meApi } from '@/lib/api'
+import { adminApi, meApi, setToken } from '@/lib/api'
 import { togetherApi } from '@/lib/api'
 import {
   connectionHourBars,
@@ -410,6 +410,7 @@ export function AccountSection({
   notify: (message: string) => void
 }) {
   const [syncCode, setSyncCode] = useState('')
+  const [oldPassword, setOldPassword] = useState('')
   const [password, setPassword] = useState('')
   const displayName = me.displayName || me.username
   const address = adminStatus?.status.address?.[0]
@@ -417,12 +418,13 @@ export function AccountSection({
   const changePassword = async(event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
     try {
-      await meApi.changePassword(password)
+      const data = await meApi.changePassword(oldPassword, password)
+      setToken(data.token)
+      setOldPassword('')
       setPassword('')
-      notify('密码已更新，请重新登录')
-      onLogout()
+      notify('密码已更新')
     } catch (error) {
-      notify(error instanceof Error ? error.message : '修改失败')
+      notify(error instanceof Error ? (error.message == 'Invalid current password' ? '当前密码错误' : error.message) : '修改失败')
     }
   }
 
@@ -497,11 +499,18 @@ export function AccountSection({
             <IconCircle tone="password"><IconKey /></IconCircle>
             <div>
               <h3>修改密码</h3>
-              <p>修改后当前登录会话会失效，需要重新登录</p>
+              <p>修改后保持当前登录，其他登录会话会失效</p>
             </div>
           </div>
         </div>
         <form style={{ padding: '10px 16px 16px', display: 'grid', gap: 12, flex: 1, alignContent: 'start' }} onSubmit={changePassword}>
+          <div className="lux-field">
+            <label htmlFor="current-password">当前密码</label>
+            <div className="lux-inp">
+              <IconLock />
+              <input id="current-password" name="oldPassword" type="password" autoComplete="current-password" required value={oldPassword} onChange={e => setOldPassword(e.target.value)} />
+            </div>
+          </div>
           <div className="lux-field">
             <label htmlFor="new-password">新密码</label>
             <div className="lux-inp">
@@ -510,7 +519,7 @@ export function AccountSection({
             </div>
           </div>
           <div style={{ background: 'var(--muted)', borderRadius: 14, padding: '10px 12px' }} className="lux-note">
-            保存后需使用新密码重新登录后台。修改后当前登录会话会失效。
+            保存后当前会话继续有效，其他会话需使用新密码重新登录后台。
           </div>
           <div style={{ display: 'grid', gap: 8, marginTop: 4 }}>
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', background: 'var(--muted2)', borderRadius: 14, padding: '10px 12px' }}>
