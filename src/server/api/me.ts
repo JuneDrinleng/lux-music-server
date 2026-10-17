@@ -7,6 +7,7 @@ import { removeDevice } from '../server'
 import { getRequiredAuthUser, requireAuth, type AuthRequest } from './authGuard'
 import { getString, isRecord, toPublicDevice } from './utils'
 import { clearAuthFailures, getRequestIP, isAuthRateLimited, recordAuthFailure } from './rateLimit'
+import { sendError } from './errors'
 
 const getOptionalProfileString = (value: unknown, maxLength: number) => {
   if (typeof value !== 'string') return undefined
@@ -24,7 +25,7 @@ const toProfile = (user: ReturnType<ReturnType<typeof getAccountStore>['findMana
   signature: user?.signature ?? '',
 })
 const updateProfile = async(request: AuthRequest, reply: FastifyReply) => {
-  if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+  if (!isRecord(request.body)) return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid body')
   const user = getRequiredAuthUser(request)
   const updatedUser = getAccountStore().updateUser(user.id, {
     displayName: getOptionalProfileString(request.body.displayName, 100),
@@ -85,7 +86,7 @@ export const registerMeApi = async(app: FastifyInstance) => {
   app.delete('/api/me/sessions/:id', { preHandler: requireAuth }, async(request: AuthRequest, reply) => {
     const user = getRequiredAuthUser(request)
     const { id } = request.params as { id: string }
-    if (!getAccountStore().sessions.revoke(id, user.id)) return reply.code(404).send({ message: 'Session not found' })
+    if (!getAccountStore().sessions.revoke(id, user.id)) return sendError(reply, 404, 'SESSION_NOT_FOUND', 'Session not found')
     return { ok: true }
   })
 
@@ -115,21 +116,21 @@ export const registerMeApi = async(app: FastifyInstance) => {
   })
 
   app.post('/api/me/password', { preHandler: requireAuth }, async(request: AuthRequest, reply) => {
-    if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+    if (!isRecord(request.body)) return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid body')
     const oldPassword = getString(request.body.oldPassword)
     const password = getString(request.body.password)
-    if (!oldPassword || !password) return reply.code(400).send({ message: 'Missing required fields' })
+    if (!oldPassword || !password) return sendError(reply, 400, 'MISSING_FIELDS', 'Missing required fields')
     if (request.body.revokeOtherDevices !== undefined && typeof request.body.revokeOtherDevices != 'boolean') {
-      return reply.code(400).send({ message: 'Invalid revokeOtherDevices' })
+      return sendError(reply, 400, 'INVALID_REQUEST', 'Invalid revokeOtherDevices')
     }
     const user = getRequiredAuthUser(request)
     const ip = getRequestIP(request)
     if (isAuthRateLimited(ip, user.username)) {
-      return reply.code(403).send({ message: 'Too many failed attempts, try again later' })
+      return sendError(reply, 429, 'RATE_LIMITED', 'Too many failed attempts, try again later')
     }
     if (!await verifyPassword(oldPassword, user.loginPasswordHash)) {
       recordAuthFailure(ip, user.username)
-      return reply.code(403).send({ message: 'Invalid current password' })
+      return sendError(reply, 403, 'INVALID_CURRENT_PASSWORD', 'Invalid current password')
     }
 
     const store = getAccountStore()

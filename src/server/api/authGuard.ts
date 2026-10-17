@@ -2,6 +2,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify'
 import { getAccountStore } from '@/account/store'
 import { verifyToken } from '@/account/token'
 import type { LuxManagedUser } from '@/account/types'
+import { sendError } from './errors'
 
 export interface AuthRequest extends FastifyRequest {
   authUser?: LuxManagedUser
@@ -32,7 +33,7 @@ export const getAuthUser = (request: AuthRequest): LuxManagedUser | null => {
 export const requireAuth = async(request: AuthRequest, reply: FastifyReply) => {
   const user = getAuthUser(request)
   if (!user) {
-    await reply.code(401).send({ message: 'Unauthorized' })
+    await sendError(reply, 401, 'UNAUTHENTICATED', 'Unauthorized')
     return
   }
   request.authUser = user
@@ -41,11 +42,11 @@ export const requireAuth = async(request: AuthRequest, reply: FastifyReply) => {
 export const requireAdmin = async(request: AuthRequest, reply: FastifyReply) => {
   const user = getAuthUser(request)
   if (!user) {
-    await reply.code(401).send({ message: 'Unauthorized' })
+    await sendError(reply, 401, 'UNAUTHENTICATED', 'Unauthorized')
     return
   }
   if (user.role != 'admin') {
-    await reply.code(403).send({ message: 'Forbidden' })
+    await sendError(reply, 403, 'FORBIDDEN', 'Forbidden')
     return
   }
   request.authUser = user

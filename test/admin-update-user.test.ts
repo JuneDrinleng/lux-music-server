@@ -47,7 +47,7 @@ describe('admin update user protection', () => {
           payload: { ...patch, displayName: 'must not persist' },
         })
         assert.equal(response.statusCode, 409, response.body)
-        assert.deepEqual(parseJson(response.body), { message: 'Cannot disable or demote yourself' })
+        assert.deepEqual(parseJson(response.body), { message: 'Cannot disable or demote yourself', code: 'SELF_DEMOTE' })
         assert.deepEqual(snapshot(), before)
         assert.equal(disconnect.mock.callCount(), 0)
       })
@@ -105,7 +105,7 @@ describe('admin update user protection', () => {
         payload: { ...patch, displayName: 'must not persist' },
       })
       assert.equal(response.statusCode, 409, response.body)
-      assert.deepEqual(parseJson(response.body), { message: 'Cannot disable or demote the last active admin' })
+      assert.deepEqual(parseJson(response.body), { message: 'Cannot disable or demote the last active admin', code: 'LAST_ADMIN' })
       assert.ok(before)
       assert.deepEqual(snapshot(), before)
       // Disabling the actor revokes its sync access; the rejected target update
@@ -144,6 +144,6 @@ describe('admin update user protection', () => {
       method: 'PATCH', url: '/api/admin/users/missing', headers, payload: { status: 'disabled' },
     })
     assert.equal(response.statusCode, 404, response.body)
-    assert.deepEqual(parseJson(response.body), { message: 'User not found' })
+    assert.deepEqual(parseJson(response.body), { message: 'User not found', code: 'USER_NOT_FOUND' })
   })
 })

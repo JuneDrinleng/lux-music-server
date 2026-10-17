@@ -127,7 +127,7 @@ describe('self-service password change', () => {
       assert.equal((await changePassword({ oldPassword: 'wrong', password: 'new-pass' })).statusCode, 403)
     }
     const blocked = await changePassword({ oldPassword: 'old-pass', password: 'new-pass' })
-    assert.equal(blocked.statusCode, 403)
+    assert.equal(blocked.statusCode, 429)
     assert.match(parseJson(blocked.body).message, /Too many failed attempts/)
     assert.equal((await me(token)).statusCode, 200)
   })

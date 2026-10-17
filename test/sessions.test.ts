@@ -217,7 +217,7 @@ describe('session tokens', () => {
 
   it('rate limits unknown refresh tokens by IP', async() => {
     for (let i = 0; i < AUTH_FAIL_LIMIT; i++) assert.equal((await refresh('unknown')).statusCode, 401)
-    assert.equal((await refresh('unknown')).statusCode, 403)
+    assert.equal((await refresh('unknown')).statusCode, 429)
   })
 
   it('uses atomic replacement and preserves the previous file when rename fails', async t => {

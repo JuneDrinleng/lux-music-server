@@ -49,11 +49,11 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 
 ## 4. 登录令牌与设备会话
 
-- `POST /api/auth/login` 继续返回旧字段 `token`：有效期固定为 14 天、无 `sid` 的 JWT，旧客户端无需改动。另加 `accessToken`、`refreshToken`、`accessTokenExpiresAt`（Unix 毫秒）和 `sessionId`。注册和 bootstrap 仍只返回用户。
+- `POST /api/auth/login` 继续返回旧字段 `token`：有效期固定为 14 天、无 `sid` 的 JWT，旧客户端无需改动。另加 `accessToken`、`refreshToken`、`accessTokenExpiresAt`（Unix 毫秒）和 `sessionId`。注册返回相同令牌字段及用户；bootstrap 仍只返回用户。
 - `accessToken` 默认有效 1 小时，携带 `sid`（会话 ID）及现有 `sessionVersion`；每次鉴权同时检查账号状态、版本及会话是否存在、未撤销且未过期。旧 `token` 保持原有鉴权方式。
 - 登录可传 `deviceId`、`deviceName`、`platform`；同一账号和非空 `deviceId` 再次登录会撤销旧会话。不传 `deviceId` 时，每次登录创建独立会话。
 - `POST /api/auth/refresh` 接收 `{ refreshToken }`，返回新的 `accessToken`、`refreshToken`、`accessTokenExpiresAt`、`sessionId`。刷新令牌为不透明随机值，默认有效 90 天，每次刷新滑动续期。刷新会更新 `lastActiveAt`，旧刷新令牌立即失效。
-- 每个会话是一条刷新令牌家族，保存 generation 和已轮换令牌的 SHA-256 哈希用于重放检测。重用已轮换令牌会撤销整个会话，连同该家族最新的刷新令牌也失效。未知、过期、已撤销或重放返回 401；沿用按 IP 的失败次数限制（达到限制后 403）。客户端应串行刷新并及时保存新令牌。
+- 每个会话是一条刷新令牌家族，保存 generation 和已轮换令牌的 SHA-256 哈希用于重放检测。重用已轮换令牌会撤销整个会话，连同该家族最新的刷新令牌也失效。未知、过期、已撤销或重放返回 401；沿用按 IP 的失败次数限制（达到限制后 429 `RATE_LIMITED`）。客户端应串行刷新并及时保存新令牌。
 - 携带 `sid` 的令牌调用 `POST /api/auth/logout` 只撤销当前会话；旧令牌登出仍提升 `sessionVersion`，使该账号全部 JWT 失效，同时撤销全部刷新会话。
 - 修改密码（包括管理员重置）或禁用账号会撤销全部会话；禁用也提升 `sessionVersion`。重新启用后需重新登录创建会话。自助改密仍返回替换用的旧格式 `token`。
 - 会话保存到 `DATA_PATH/lux/sessions.json`（与 `accounts.json` 同目录），只存刷新令牌哈希，不存原文。沿用原子写入和损坏/不可读文件备份后拒绝启动策略；临时文件不参与恢复。保存时清理撤销超过 30 天或过期超过 30 天的会话。会话自助管理 API 见下文；同步设备密钥生命周期见下表。
@@ -92,7 +92,38 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 
 TTL 必须是有限正数，否则使用默认值；不影响旧 `token` 的 14 天有效期。`LUX_TOKEN_SECRET` 继续用于签名两类 JWT。
 
-## 5. 相关代码
+## 5. 服务发现与邀请码
+
+`GET /api/server-info` 无需鉴权，响应带 `Cache-Control: no-store`：
+
+```json
+{
+  "name": "Lux Music Sync Server",
+  "version": "0.0.1",
+  "packageVersion": "0.0.1",
+  "minClientVersion": null,
+  "registration": { "inviteOnly": true, "enabled": true },
+  "features": ["sessions", "refresh", "me-sessions", "invite-check"]
+}
+```
+
+`version` 优先使用 `LUX_VERSION`，否则使用 `package.json`；`packageVersion` 始终是包版本。
+现有 Docker 发布未设置 `LUX_VERSION`，但 release workflow 在构建前将发布版本写入包文件。
+`minClientVersion` 来自 `LUX_MIN_CLIENT_VERSION`，未设置时为 `null`。
+`enabled` 表示邀请码注册端点可用，不代表当前一定有可用邀请码。服务端不报告 HTTPS 状态，客户端自行判断。
+
+`GET /api/auth/invite/check?inviteCode=...` 或 `POST /api/auth/invite/check` JSON
+`{ "inviteCode": "..." }` 无需鉴权，成功返回
+`{ valid: true, inviterName, role, expiresAt }`；`inviterName` 为邀请者 displayName 或 username，
+邀请者不存在时为 `null`；无有效期时 `expiresAt` 为 `null`，否则为 Unix 毫秒。
+检查不消耗次数。不存在返回 404，禁用、过期、用尽返回 410；失败按 IP 使用现有鉴权限流。
+
+`POST /api/auth/register` 继续接收 `inviteCode`、`username`、`password`、可选 `displayName`，
+并支持与登录相同的设备字段。成功返回用户、旧 `token` 及 access/refresh 会话字段；
+创建用户和消耗邀请次数在密码哈希完成后同步校验、一次保存，防止并发超用。
+错误保留原有 message，增加机器可读 code，详见 [api-errors.md](./api-errors.md)。
+
+## 6. 相关代码
 
 - `src/account/store.ts`：`getSyncUsers()` / `refreshGlobalUsers()`
 - `src/index.ts`：启动时 `initAccountStore` 后覆盖 `global.lx.config.users`
