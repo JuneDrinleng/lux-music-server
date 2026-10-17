@@ -53,7 +53,7 @@ export const meApi = {
   devices: () => request<{ devices: Device[] }>('/api/me/devices'),
   deleteDevice: (clientId: string) => request<{ ok: boolean }>(`/api/me/devices/${encodeURIComponent(clientId)}`, { method: 'DELETE' }),
   playlists: () => request<{ playlists: PlaylistSummary }>('/api/me/playlists'),
-  changePassword: (password: string) => request<{ ok: boolean }>('/api/me/password', { method: 'POST', body: jsonBody({ password }) }),
+  changePassword: (oldPassword: string, password: string) => request<{ ok: boolean, token: string, user: PublicUser }>('/api/me/password', { method: 'POST', body: jsonBody({ oldPassword, password }) }),
   revealSyncCode: () => request<{ syncCode: string }>('/api/me/sync-code'),
   resetSyncCode: () => request<{ syncCode: string }>('/api/me/sync-code/reset', { method: 'POST' }),
 }

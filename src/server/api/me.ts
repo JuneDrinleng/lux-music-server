@@ -1,9 +1,12 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { getAccountStore } from '@/account/store'
+import { verifyPassword } from '@/account/password'
+import { createToken } from '@/account/token'
 import { getUserSpace } from '@/user'
 import { removeDevice } from '../server'
 import { getRequiredAuthUser, requireAuth, type AuthRequest } from './authGuard'
 import { getString, isRecord } from './utils'
+import { clearAuthFailures, getRequestIP, isAuthRateLimited, recordAuthFailure } from './rateLimit'
 
 const getOptionalProfileString = (value: unknown, maxLength: number) => {
   if (typeof value !== 'string') return undefined
@@ -85,11 +88,34 @@ export const registerMeApi = async(app: FastifyInstance) => {
 
   app.post('/api/me/password', { preHandler: requireAuth }, async(request: AuthRequest, reply) => {
     if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
+    const oldPassword = getString(request.body.oldPassword)
     const password = getString(request.body.password)
-    if (!password) return reply.code(400).send({ message: 'Missing password' })
+    if (!oldPassword || !password) return reply.code(400).send({ message: 'Missing required fields' })
+    if (request.body.revokeOtherDevices !== undefined && typeof request.body.revokeOtherDevices != 'boolean') {
+      return reply.code(400).send({ message: 'Invalid revokeOtherDevices' })
+    }
     const user = getRequiredAuthUser(request)
-    await getAccountStore().changePassword(user.id, password)
-    return { ok: true }
+    const ip = getRequestIP(request)
+    if (isAuthRateLimited(ip, user.username)) {
+      return reply.code(403).send({ message: 'Too many failed attempts, try again later' })
+    }
+    if (!await verifyPassword(oldPassword, user.loginPasswordHash)) {
+      recordAuthFailure(ip, user.username)
+      return reply.code(403).send({ message: 'Invalid current password' })
+    }
+
+    const store = getAccountStore()
+    const updatedUser = await store.changePassword(user.id, password)
+    clearAuthFailures(ip, user.username)
+    // revokeOtherDevices will also revoke sync device keys in a later PR.
+    const token = createToken({
+      userId: user.id,
+      username: user.username,
+      role: user.role,
+      sessionVersion: user.sessionVersion,
+      secret: store.getTokenSecret(),
+    })
+    return { ok: true, token, user: updatedUser }
   })
 
   app.get('/api/me/sync-code', { preHandler: requireAuth }, async(request: AuthRequest, reply) => {
