@@ -44,6 +44,8 @@ interface Room {
   version: number
   playbackVersion: number
   queueVersion: number
+  requestsVersion: number
+  requests: LX.Sync.Together.SongRequest[]
   playback: LX.Sync.Together.Playback
   queue: LX.Sync.Together.Queue
   hostUpdates: number[]
@@ -132,6 +134,8 @@ export class RoomManager {
       version: 1,
       playbackVersion: 1,
       queueVersion: 1,
+      requestsVersion: 1,
+      requests: [],
       playback: { musicInfo: null, quality: null, isPlaying: false, positionMs: 0, durationMs: 0, updatedAt: now },
       queue: { items: [], currentId: null },
       hostUpdates: [],
@@ -139,7 +143,7 @@ export class RoomManager {
     room.members.set(memberId, this.createMemberEntry(socket, account, now, deviceId))
     this.rooms.set(code, room)
     this.memberRooms.set(deviceId, { code, memberId })
-    return ok(this.snapshot(room))
+    return ok(this.snapshot(room, socket))
   }
 
   joinRoom(socket: LX.Socket, req: unknown): Result<Snapshot> {
@@ -165,7 +169,7 @@ export class RoomManager {
     if (current?.room.code == code) {
       const { room, member } = current
       this.bindSocket(room, member, socket)
-      return ok(this.snapshot(room))
+      return ok(this.snapshot(room, socket))
     }
     if (current) return fail('ALREADY_IN_ROOM', 'This device is already in another room')
 
@@ -177,13 +181,13 @@ export class RoomManager {
     this.memberRooms.set(deviceId, { code, memberId })
     room.version++
     this.pushMemberChanged(room, { type: 'join', memberId }, memberId)
-    return ok(this.snapshot(room))
+    return ok(this.snapshot(room, socket))
   }
 
   getRoom(socket: LX.Socket): Result<Snapshot | null> {
     if (!this.getAccount(socket)) return fail('NOT_LUX_ACCOUNT', 'Listen together requires an active Lux account')
     const room = this.getMembershipOf(this.getDeviceClientId(socket))?.room
-    return ok(room ? this.snapshot(room) : null)
+    return ok(room ? this.snapshot(room, socket) : null)
   }
 
   leaveRoom(socket: LX.Socket, req: unknown): Result<null> {
@@ -222,7 +226,7 @@ export class RoomManager {
       !isFiniteNumber(r.sampledAt)) {
       return fail('INVALID_PARAMS', 'Invalid playback state')
     }
-    if (r.baseVersion != room.playbackVersion) return fail('VERSION_CONFLICT', 'Playback version conflict', this.snapshot(room))
+    if (r.baseVersion != room.playbackVersion) return fail('VERSION_CONFLICT', 'Playback version conflict', this.snapshot(room, socket))
 
     const now = this.clock.now()
     const updatedAt = clamp(r.sampledAt, now - TOGETHER_LIMITS.sampledAtSkewMs, now)
@@ -243,7 +247,7 @@ export class RoomManager {
     return ok({ version: room.version, subVersion: room.playbackVersion, updatedAt })
   }
 
-  hostUpdateQueue(socket: LX.Socket, req: unknown): Result<LX.Sync.Together.UpdateAck> {
+  hostUpdateQueue(socket: LX.Socket, req: unknown, includeHost = false): Result<LX.Sync.Together.UpdateAck> {
     const found = this.findHost(socket, req)
     if (!found.ok) return found
     const room = found.data
@@ -260,13 +264,17 @@ export class RoomManager {
       if (!musicInfo) return fail('INVALID_MUSIC', 'Queue may only contain online songs')
       items.push(musicInfo)
     }
-    if (r.baseVersion != room.queueVersion) return fail('VERSION_CONFLICT', 'Queue version conflict', this.snapshot(room))
+    if (r.baseVersion != room.queueVersion) return fail('VERSION_CONFLICT', 'Queue version conflict', this.snapshot(room, socket))
 
-    room.queue = { items, currentId: r.currentId as string | null }
+    return ok(this.updateQueue(room, { items, currentId: r.currentId as string | null }, includeHost))
+  }
+
+  private updateQueue(room: Room, queue: LX.Sync.Together.Queue, includeHost = false): LX.Sync.Together.UpdateAck {
+    room.queue = queue
     room.queueVersion++
     room.version++
-    this.pushRoomState(room, true)
-    return ok({ version: room.version, subVersion: room.queueVersion, updatedAt: this.clock.now() })
+    this.pushRoomState(room, true, includeHost)
+    return { version: room.version, subVersion: room.queueVersion, updatedAt: this.clock.now() }
   }
 
   transferHost(socket: LX.Socket, req: unknown): Result<null> {
@@ -281,6 +289,112 @@ export class RoomManager {
     if (!target.info.online) return fail('MEMBER_OFFLINE', 'Member is offline')
     if (targetId != memberId) this.changeHost(room, targetId, 'transfer')
     return ok(null)
+  }
+
+  requestAdd(socket: LX.Socket, req: unknown): Result<null> {
+    const found = this.findRequestMember(socket)
+    if (!found.ok) return found
+    const { room, memberId, member } = found.data
+    const song = sanitizeMusicInfo(isRecord(req) ? req.song : undefined)
+    if (!song) return fail('INVALID_MUSIC', 'Request must contain an online song')
+    if (room.requests.some(request => this.sameSong(request.song, song)) || room.queue.items.some(item => this.sameSong(item, song))) {
+      return fail('DUPLICATE_SONG', 'Song is already requested or in the queue')
+    }
+    if (room.requests.length >= TOGETHER_LIMITS.requestsPerRoom) return fail('REQUEST_LIMIT', 'Room allows at most 30 pending requests')
+    if (room.requests.filter(request => request.requestedBy.memberId == memberId).length >= TOGETHER_LIMITS.requestsPerMember) {
+      return fail('REQUEST_LIMIT', 'Each member may have at most 3 pending requests')
+    }
+    room.requests.push({
+      id: crypto.randomUUID(), song, requestedBy: { memberId, displayName: member.info.displayName },
+      at: this.clock.now(), status: 'pending',
+    })
+    this.pushRequests(room)
+    return ok(null)
+  }
+
+  requestApprove(socket: LX.Socket, req: unknown): Result<LX.Sync.Together.UpdateAck> {
+    const found = this.findRequestMember(socket, true)
+    if (!found.ok) return found
+    const { room } = found.data
+    if (!isRecord(req) || typeof req.requestId != 'string' || !req.requestId ||
+      (req.expectedQueueVersion !== undefined && (!Number.isInteger(req.expectedQueueVersion) || req.expectedQueueVersion < 0))) {
+      return fail('INVALID_PARAMS', 'Invalid requestId or expectedQueueVersion')
+    }
+    const request = room.requests.find(request => request.id == req.requestId)
+    if (!request) return fail('REQUEST_NOT_FOUND', 'Pending request not found')
+    if (req.expectedQueueVersion !== undefined && req.expectedQueueVersion != room.queueVersion) {
+      return fail('VERSION_CONFLICT', 'Queue version conflict', this.snapshot(room, socket))
+    }
+    if (room.queue.items.some(item => this.sameSong(item, request.song))) return fail('DUPLICATE_SONG', 'Song is already in the queue')
+    // Reuse host queue validation, rate limiting and mutation; no await between lookup and removal.
+    const result = this.hostUpdateQueue(socket, {
+      roomId: room.roomId, baseVersion: room.queueVersion,
+      items: [...room.queue.items, request.song], currentId: room.queue.currentId,
+    }, true)
+    if (!result.ok) return result
+    room.requests = room.requests.filter(item => item.id != request.id)
+    this.pushRequests(room)
+    return ok({ ...result.data, version: room.version })
+  }
+
+  requestReject(socket: LX.Socket, req: unknown): Result<null> {
+    return this.dropRequest(socket, req, true)
+  }
+
+  requestRemove(socket: LX.Socket, req: unknown): Result<null> {
+    return this.dropRequest(socket, req, false)
+  }
+
+  requestReorder(socket: LX.Socket, req: unknown): Result<null> {
+    const found = this.findRequestMember(socket, true)
+    if (!found.ok) return found
+    const { room } = found.data
+    const ids = isRecord(req) ? req.requestIds : undefined
+    if (!Array.isArray(ids) || ids.length != room.requests.length || new Set(ids).size != ids.length ||
+      Array.from(ids).some(id => typeof id != 'string' || !room.requests.some(request => request.id == id))) {
+      return fail('INVALID_PARAMS', 'requestIds must be a permutation of pending request ids')
+    }
+    room.requests = ids.map(id => room.requests.find(request => request.id == id)!)
+    this.pushRequests(room)
+    return ok(null)
+  }
+
+  private findRequestMember(socket: LX.Socket, hostOnly = false) {
+    if (!this.getAccount(socket)) return fail('NOT_LUX_ACCOUNT', 'Listen together requires an active Lux account')
+    const found = this.getMembershipOf(this.getDeviceClientId(socket))
+    if (!found || found.member.socket !== socket || !found.member.info.online || !isSocketOpen(socket)) {
+      return fail('NOT_IN_ROOM', 'Not an active member of a room')
+    }
+    if (hostOnly && found.room.hostId != found.memberId) return fail('NOT_HOST', 'Only the host can manage requests')
+    return ok(found)
+  }
+
+  private dropRequest(socket: LX.Socket, req: unknown, hostOnly: boolean): Result<null> {
+    const found = this.findRequestMember(socket, hostOnly)
+    if (!found.ok) return found
+    const { room, memberId } = found.data
+    if (!isRecord(req) || typeof req.requestId != 'string' || !req.requestId) return fail('INVALID_PARAMS', 'requestId must be a non-empty string')
+    const request = room.requests.find(request => request.id == req.requestId)
+    if (!request) return fail('REQUEST_NOT_FOUND', 'Pending request not found')
+    if (room.hostId != memberId && request.requestedBy.memberId != memberId) return fail('NOT_REQUESTER', 'Only the requester or host can remove a request')
+    room.requests = room.requests.filter(item => item.id != request.id)
+    this.pushRequests(room)
+    return ok(null)
+  }
+
+  private sameSong(a: LX.Music.MusicInfoOnline, b: LX.Music.MusicInfoOnline) {
+    return a.id == b.id && a.source == b.source
+  }
+
+  private requests(room: Room): LX.Sync.Together.SongRequest[] {
+    return JSON.parse(JSON.stringify(room.requests))
+  }
+
+  private pushRequests(room: Room) {
+    room.requestsVersion++
+    room.version++
+    const push: LX.Sync.Together.RequestsPush = { roomId: room.roomId, requests: this.requests(room), version: room.requestsVersion }
+    broadcastRoom(room, async remote => remote['together:onRequests'](push), undefined, 'together.request')
   }
 
   reaction(socket: LX.Socket, req: unknown): Result<null> {
@@ -506,6 +620,11 @@ export class RoomManager {
     this.clearGrace(member)
     room.members.delete(memberId)
     this.memberRooms.delete(member.deviceId)
+    const remaining = room.requests.filter(request => request.requestedBy.memberId != memberId)
+    if (remaining.length != room.requests.length) {
+      room.requests = remaining
+      this.pushRequests(room)
+    }
     room.version++
     this.pushMemberChanged(room, { type: 'leave', memberId, reason }, memberId)
   }
@@ -531,7 +650,7 @@ export class RoomManager {
     broadcastRoom(room, async remote => remote['together:onMemberChanged'](push), exceptMemberId)
   }
 
-  private pushRoomState(room: Room, withQueue: boolean) {
+  private pushRoomState(room: Room, withQueue: boolean, includeHost = false) {
     const push: LX.Sync.Together.RoomStatePush = {
       roomId: room.roomId,
       version: room.version,
@@ -541,7 +660,7 @@ export class RoomManager {
       queueVersion: room.queueVersion,
     }
     if (withQueue) push.queue = { items: [...room.queue.items], currentId: room.queue.currentId }
-    broadcastRoom(room, async remote => remote['together:onRoomState'](push), room.hostId)
+    broadcastRoom(room, async remote => remote['together:onRoomState'](push), includeHost ? undefined : room.hostId)
   }
 
   private members(room: Room): Member[] {
@@ -550,7 +669,7 @@ export class RoomManager {
       .sort((a, b) => a.joinedAt - b.joinedAt)
   }
 
-  private snapshot(room: Room): Snapshot {
+  private snapshot(room: Room, socket: LX.Socket): Snapshot {
     return {
       roomId: room.roomId,
       code: room.code,
@@ -564,6 +683,7 @@ export class RoomManager {
       playback: { ...room.playback },
       queue: { items: [...room.queue.items], currentId: room.queue.currentId },
       serverTime: this.clock.now(),
+      ...(socket.feature['together.request'] ? { requests: this.requests(room), requestsVersion: room.requestsVersion } : {}),
     }
   }
 }

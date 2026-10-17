@@ -44,6 +44,8 @@ declare namespace LX {
       together?: boolean
       /** Opt in to ephemeral together:onReaction pushes. */
       'together.reaction'?: boolean
+      /** Opt in to song requests and together:onRequests pushes. */
+      'together.request'?: boolean
     }
     type SupportedFeatures = Partial<{ [k in keyof EnabledFeatures]: number } & {
       /** Optional record fields; does not require separate client enablement. */

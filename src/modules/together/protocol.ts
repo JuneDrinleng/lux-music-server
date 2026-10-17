@@ -6,6 +6,7 @@ import { syncLog } from '@/utils/log4js'
 
 export const TOGETHER_FEATURE_VERSION = 1
 export const TOGETHER_REACTION_FEATURE_VERSION = 1
+export const TOGETHER_REQUEST_FEATURE_VERSION = 1
 
 /** Only these exact emoji sequences are supported (after trimming spaces). */
 export const TOGETHER_REACTION_EMOJIS = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🔥', '👏'] as const
@@ -20,6 +21,11 @@ export const TOGETHER_METHODS = {
   hostUpdateQueue: 'together:hostUpdateQueue',
   transferHost: 'together:transferHost',
   reaction: 'together:reaction',
+  requestAdd: 'together:request:add',
+  requestApprove: 'together:request:approve',
+  requestReject: 'together:request:reject',
+  requestRemove: 'together:request:remove',
+  requestReorder: 'together:request:reorder',
   ping: 'together:ping',
 } as const
 
@@ -29,10 +35,13 @@ export const TOGETHER_PUSHES = {
   hostChanged: 'together:onHostChanged',
   roomClosed: 'together:onRoomClosed',
   reaction: 'together:onReaction',
+  requests: 'together:onRequests',
 } as const
 
 export const TOGETHER_LIMITS = {
   queueItems: 200,
+  requestsPerMember: 3,
+  requestsPerRoom: 30,
   /** hostUpdateState.sampledAt is clamped into [now - this, now]. */
   sampledAtSkewMs: 5000,
   joinFailures: 10,

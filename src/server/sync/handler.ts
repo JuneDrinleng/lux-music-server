@@ -48,6 +48,7 @@ const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
       schedule('together', !!feature.together, togetherModule.sync)
       if (!feature.together) getRoomManager().handleSocketDisabled(socket)
     }
+    if (feature['together.request'] != null) socket.feature['together.request'] = !!feature['together.request']
     if (feature['together.reaction'] != null) socket.feature['together.reaction'] = !!feature['together.reaction']
     for (const run of pending) await run()
   },

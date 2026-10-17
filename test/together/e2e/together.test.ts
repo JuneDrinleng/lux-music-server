@@ -61,6 +61,54 @@ describe('together: two real WebSocket clients', { concurrency: false, timeout: 
     await client.waitFor(() => client.pushes.some(p => p.method == MEMBERS && p.payload.change.type == 'offline' && p.payload.change.memberId == memberId), 'offline push')
   }
 
+  it('requests and approves once across host, member and old-client WebSockets', { timeout: 5000 }, async() => {
+    const host = await fixture.connect('host', { request: true })
+    const member = await fixture.connect('member', { request: true })
+    const old = await fixture.connect('member', {}, true, fixture.credentials.old)
+    assert.equal((host.handshake[0].args[1] as Record<string, number>)['together.request'], 1)
+    const room = unwrap(await host.createRoom())
+    assert.deepEqual(room.requests, [])
+    unwrap(await member.joinRoom(room.code))
+    assert.equal('requests' in unwrap(await old.joinRoom(room.code)), false)
+    for (let i = 0; i < 3; i++) unwrap(await member.requestAdd(song(`request-${i}`)))
+    const limited = await member.requestAdd(song('over-limit'))
+    assert.equal(limited.ok, false)
+    if (!limited.ok) assert.equal(limited.code, 'REQUEST_LIMIT')
+    for (const client of [host, member]) {
+      await client.waitFor(() => pushesOf(client, 'together:onRequests').length == 3, 'request broadcasts')
+      assert.deepEqual(pushesOf(client, 'together:onRequests').map(push => push.payload.version), [2, 3, 4])
+    }
+    const pending = unwrap(await host.getRoom())!
+    const requestId = pending.requests![0].id
+    const stale = await host.requestApprove(requestId, 0)
+    assert.equal(stale.ok, false)
+    if (!stale.ok) assert.equal(stale.code, 'VERSION_CONFLICT')
+    assert.deepEqual(unwrap(await host.getRoom()), pending)
+    const approvals = await Promise.all([host.requestApprove(requestId, 1), host.requestApprove(requestId, 1)])
+    assert.equal(approvals.filter(result => result.ok).length, 1)
+    assert.equal(approvals.filter(result => !result.ok && result.code == 'REQUEST_NOT_FOUND').length, 1)
+    for (const client of [host, member, old]) {
+      await client.waitFor(() => pushesOf(client, STATE).some(push => push.payload.queueVersion == 2), 'approved queue')
+      const state = unwrap(await client.getRoom())!
+      assert.deepEqual(state.queue.items, [song('request-0')])
+      assert.equal(state.queueVersion, 2)
+      assert.deepEqual(pushesOf(client, STATE).at(-1)!.payload.queue!.items, state.queue.items)
+      assert.equal(client.rpcErrors.length, 0)
+    }
+    assert.equal(unwrap(await host.getRoom())!.requests!.length, 2)
+    assert.equal(old.frames.some(frame => frame.path == 'together:onRequests'), false)
+    assert.deepEqual(unwrap(await old.ping(42)), { t0: 42, serverTime: fixture.now() })
+    unwrap(await member.requestAdd(song('replacement')))
+    await host.waitFor(() => pushesOf(host, 'together:onRequests').length == 5, 'request slot freed')
+    assert.deepEqual(unwrap(await member.joinRoom(room.code)).requests, unwrap(await host.getRoom())!.requests)
+    await member.onFeatureChanged({ 'together.request': false })
+    unwrap(await host.requestAdd(song('host-pending')))
+    unwrap(await member.ping(1))
+    assert.equal(pushesOf(member, 'together:onRequests').length, 5)
+    assert.equal('requests' in unwrap(await member.getRoom())!, false)
+    results.set('request limits, concurrent approval and old client compatibility', 'pass')
+  })
+
   it('delivers reactions to opted-in members and keeps an old client session working', { timeout: 5000 }, async() => {
     const host = await fixture.connect('host', { reaction: true })
     const member = await fixture.connect('member', { reaction: true })

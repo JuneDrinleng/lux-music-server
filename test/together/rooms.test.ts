@@ -631,3 +631,143 @@ describe('together rooms: reactions', () => {
     assert.equal(replacement.takePushes('together:onReaction')[0].payload.memberId, 'c_alias')
   })
 })
+
+
+describe('together rooms: requests', () => {
+  const setup = () => {
+    const ctx = setupRoom({ maxMembers: 50 })
+    ctx.host.feature['together.request'] = true
+    const bob = createFakeSocket('c_bob', 'bob')
+    bob.feature['together.request'] = true
+    const old = createFakeSocket('c_old', 'carol')
+    unwrap(ctx.manager.joinRoom(bob, { code: ctx.room.code }))
+    unwrap(ctx.manager.joinRoom(old, { code: ctx.room.code }))
+    const snapshot = () => unwrap(ctx.manager.getRoom(ctx.host))!
+    return { ...ctx, bob, old, snapshot }
+  }
+
+  it('keeps host requests pending, sanitizes songs, gates broadcasts and restores snapshots', () => {
+    const { manager, host, bob, old, room, snapshot, clock } = setup()
+    host.takePushes(); bob.takePushes(); old.takePushes()
+    const music = { ...song('one'), meta: { ...song('one').meta, toggleMusicInfo: song('two') } }
+    unwrap(manager.requestAdd(host, { song: music, requestedBy: { memberId: 'forged' }, at: 0 }))
+    const state = snapshot()
+    assert.equal(state.queueVersion, 1)
+    assert.equal(state.queue.items.length, 0)
+    assert.equal(state.requestsVersion, 2)
+    assert.deepEqual(state.requests![0].requestedBy, { memberId: 'c_host', displayName: 'Alice' })
+    assert.equal(state.requests![0].at, clock.now())
+    assert.equal(state.requests![0].status, 'pending')
+    assert.equal('toggleMusicInfo' in state.requests![0].song.meta, false)
+    for (const socket of [host, bob]) assert.deepEqual(socket.takePushes('together:onRequests')[0].payload, {
+      roomId: room.roomId, requests: state.requests, version: 2,
+    })
+    assert.equal(old.takePushes().length, 0)
+    assert.equal('requests' in unwrap(manager.getRoom(old))!, false)
+    state.requests![0].song.name = 'mutated'
+    assert.equal(snapshot().requests![0].song.name, music.name)
+    manager.handleSocketClosed(bob)
+    const replacement = createFakeSocket('c_bob', 'bob')
+    replacement.feature['together.request'] = true
+    assert.deepEqual(unwrap(manager.joinRoom(replacement, { code: room.code })).requests, snapshot().requests)
+    assert.equal(codeOf(manager.requestAdd(bob, { song: song('stale') })), 'NOT_IN_ROOM')
+  })
+
+  it('enforces per-device and room limits, duplicate identity and existing queue songs', () => {
+    const { manager, host, bob, room, snapshot } = setup()
+    for (let i = 0; i < 3; i++) unwrap(manager.requestAdd(bob, { song: song(String(i)) }))
+    const before = snapshot()
+    assert.equal(codeOf(manager.requestAdd(bob, { song: song('extra') })), 'REQUEST_LIMIT')
+    assert.equal(codeOf(manager.requestAdd(host, { song: song('0') })), 'DUPLICATE_SONG')
+    assert.deepEqual(snapshot(), before)
+    // Same id with a different source is a different song.
+    unwrap(manager.requestAdd(host, { song: { ...song('0'), source: 'tx' } }))
+    unwrap(manager.hostUpdateQueue(host, { roomId: room.roomId, baseVersion: 1, items: [song('queued')], currentId: null }))
+    assert.equal(codeOf(manager.requestAdd(host, { song: song('queued') })), 'DUPLICATE_SONG')
+    for (let i = 0; snapshot().requests!.length < 30; i++) {
+      const device = createFakeSocket(`device-${i}`, 'bob')
+      unwrap(manager.joinRoom(device, { code: room.code }))
+      for (let j = 0; j < 3 && snapshot().requests!.length < 30; j++) unwrap(manager.requestAdd(device, { song: song(`${i}-${j}`) }))
+    }
+    assert.equal(codeOf(manager.requestAdd(host, { song: song('room-full') })), 'REQUEST_LIMIT')
+  })
+
+  it('enforces permissions and exact permutations; remove and reject drop pending entries', () => {
+    const { manager, host, bob, old, snapshot } = setup()
+    unwrap(manager.requestAdd(bob, { song: song('one') }))
+    unwrap(manager.requestAdd(host, { song: song('two') }))
+    const ids = snapshot().requests!.map(request => request.id)
+    for (const action of ['requestApprove', 'requestReject', 'requestReorder'] as const) {
+      assert.equal(codeOf(manager[action](bob, { requestId: ids[0], requestIds: ids })), 'NOT_HOST')
+    }
+    assert.equal(codeOf(manager.requestRemove(old, { requestId: ids[0] })), 'NOT_REQUESTER')
+    assert.equal(codeOf(manager.requestAdd(createFakeSocket('outsider', 'bob'), { song: song('three') })), 'NOT_IN_ROOM')
+    for (const requestIds of [[], [ids[0]], [ids[0], ids[0]], [ids[0], 'unknown'], [ids[0], 1]]) {
+      assert.equal(codeOf(manager.requestReorder(host, { requestIds })), 'INVALID_PARAMS')
+    }
+    unwrap(manager.requestReorder(host, { requestIds: [...ids].reverse() }))
+    assert.deepEqual(snapshot().requests!.map(request => request.id), [...ids].reverse())
+    assert.equal(snapshot().requestsVersion, 4)
+    unwrap(manager.requestRemove(bob, { requestId: ids[0] }))
+    unwrap(manager.requestReject(host, { requestId: ids[1] }))
+    assert.deepEqual(snapshot().requests, [])
+    assert.equal(codeOf(manager.requestRemove(host, { requestId: ids[0] })), 'REQUEST_NOT_FOUND')
+    unwrap(manager.requestAdd(bob, { song: song('one') }))
+    unwrap(manager.requestRemove(host, { requestId: snapshot().requests![0].id }))
+    assert.deepEqual(snapshot().requests, [])
+  })
+
+  it('approves exactly once, preserves state on stale versions, full queues and duplicates', () => {
+    const { manager, host, bob, room, snapshot } = setup()
+    unwrap(manager.requestAdd(bob, { song: song('one') }))
+    const requestId = snapshot().requests![0].id
+    const before = snapshot()
+    assert.equal(codeOf(manager.requestApprove(host, { requestId, expectedQueueVersion: 0 })), 'VERSION_CONFLICT')
+    assert.deepEqual(snapshot(), before)
+    const ack = unwrap(manager.requestApprove(host, { requestId, expectedQueueVersion: 1 }))
+    assert.equal(ack.subVersion, 2)
+    assert.equal(codeOf(manager.requestApprove(host, { requestId })), 'REQUEST_NOT_FOUND')
+    assert.deepEqual(snapshot().queue.items, [song('one')])
+    assert.deepEqual(snapshot().requests, [])
+    for (const socket of [host, bob]) assert.equal(socket.takePushes('together:onRoomState').at(-1)!.payload.queueVersion, 2)
+    unwrap(manager.requestAdd(bob, { song: song('two') }))
+    const nextId = snapshot().requests![0].id
+    unwrap(manager.hostUpdateQueue(host, { roomId: room.roomId, baseVersion: 2, items: [song('two')], currentId: null }))
+    assert.equal(codeOf(manager.requestApprove(host, { requestId: nextId })), 'DUPLICATE_SONG')
+    unwrap(manager.hostUpdateQueue(host, { roomId: room.roomId, baseVersion: 3, items: Array.from({ length: 200 }, (_, i) => song(`full-${i}`)), currentId: null }))
+    const full = snapshot()
+    assert.equal(codeOf(manager.requestApprove(host, { requestId: nextId })), 'INVALID_PARAMS')
+    assert.deepEqual(snapshot(), full)
+  })
+
+  it('serializes competing approvals against the same expected queue version', async() => {
+    const { manager, host, bob, snapshot } = setup()
+    unwrap(manager.requestAdd(bob, { song: song('one') }))
+    unwrap(manager.requestAdd(bob, { song: song('two') }))
+    const ids = snapshot().requests!.map(request => request.id)
+    const results = await Promise.all(ids.map(async requestId => manager.requestApprove(host, { requestId, expectedQueueVersion: 1 })))
+    assert.deepEqual(results.map(codeOf), ['OK', 'VERSION_CONFLICT'])
+    assert.equal(snapshot().queueVersion, 2)
+    assert.deepEqual(snapshot().requests!.map(request => request.id), [ids[1]])
+    unwrap(manager.requestApprove(host, { requestId: ids[1], expectedQueueVersion: 2 }))
+    assert.equal(snapshot().queueVersion, 3)
+    assert.deepEqual(snapshot().requests, [])
+  })
+
+  it('drops requests on leave, timeout, disable and host departure; close clears the room', () => {
+    for (const leave of ['leave', 'timeout', 'disable', 'host'] as const) {
+      const { manager, host, bob, room, advance, snapshot } = setup()
+      const requester = leave == 'host' ? host : bob
+      unwrap(manager.requestAdd(requester, { song: song('one') }))
+      if (leave == 'leave' || leave == 'host') unwrap(manager.leaveRoom(requester, { roomId: room.roomId }))
+      else if (leave == 'disable') manager.handleSocketDisabled(requester)
+      else { manager.handleSocketClosed(requester); advance(30_000) }
+      const remaining = unwrap(manager.getRoom(leave == 'host' ? bob : host))!
+      assert.deepEqual(remaining.requests, [])
+      assert.equal(remaining.requestsVersion, 3)
+      if (leave != 'host') assert.deepEqual(snapshot().requests, [])
+      unwrap(manager.closeRoom(leave == 'host' ? bob : host, { roomId: room.roomId }))
+      assert.equal(unwrap(manager.getRoom(bob)), null)
+    }
+  })
+})

@@ -31,6 +31,7 @@ export const createGate = (): Gate => {
 
 export interface ClientOptions {
   reaction?: boolean
+  request?: boolean
   featuresGate?: Gate
   togetherFinishedGate?: Gate
   listDataGate?: Gate
@@ -158,7 +159,7 @@ export class TogetherClient {
           recordHandshake('getEnabledFeatures', [serverType, supportedFeatures])
           await options.featuresGate?.wait
           // Feature version 1 is truthy on the legacy EnabledFeatures wire format.
-          return { list: false, dislike: false, playHistory: false, together: 1, ...(options.reaction ? { 'together.reaction': true } : {}) }
+          return { list: false, dislike: false, playHistory: false, together: 1, ...(options.reaction ? { 'together.reaction': true } : {}), ...(options.request ? { 'together.request': true } : {}) }
         },
         together_sync_finished: async() => {
           recordHandshake('together_sync_finished')
@@ -181,6 +182,7 @@ export class TogetherClient {
         'together:onMemberChanged': (payload: LX.Sync.Together.MemberChangedPush) => { recordPush('together:onMemberChanged', payload) },
         'together:onHostChanged': (payload: LX.Sync.Together.HostChangedPush) => { recordPush('together:onHostChanged', payload) },
         ...(options.reaction ? { 'together:onReaction': (payload: LX.Sync.Together.ReactionPush) => { recordPush('together:onReaction', payload) } } : {}),
+        ...(options.request ? { 'together:onRequests': (payload: LX.Sync.Together.RequestsPush) => { recordPush('together:onRequests', payload) } } : {}),
         'together:onRoomClosed': (payload: LX.Sync.Together.RoomClosedPush) => { recordPush('together:onRoomClosed', payload) },
       },
       sendMessage: data => {
@@ -275,6 +277,8 @@ export class TogetherClient {
   getRoom() { return this.rpc.remote['together:getRoom']() }
   hostUpdateState(request: LX.Sync.Together.HostUpdateStateRequest) { return this.rpc.remote['together:hostUpdateState'](request) }
   hostUpdateQueue(request: LX.Sync.Together.HostUpdateQueueRequest) { return this.rpc.remote['together:hostUpdateQueue'](request) }
+  requestAdd(song: LX.Music.MusicInfoOnline) { return this.rpc.remote['together:request:add']({ song }) }
+  requestApprove(requestId: string, expectedQueueVersion?: number) { return this.rpc.remote['together:request:approve']({ requestId, expectedQueueVersion }) }
   reaction(emoji: string) { return this.rpc.remote['together:reaction']({ emoji }) }
   ping(t0: number) { return this.rpc.remote['together:ping']({ t0 }) }
   leave(roomId: string) { return this.rpc.remote['together:leaveRoom']({ roomId }) }

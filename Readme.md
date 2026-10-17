@@ -382,3 +382,35 @@ in snapshots, or counted as room version changes. Each membership allows
 5 reactions per sliding 3 seconds and 60 per sliding minute; reconnecting
 preserves these counters. Invalid emoji return `INVALID_PARAMS`, non-members
 return `NOT_IN_ROOM`, and excess reactions return `RATE_LIMITED` with no push.
+
+
+### Listen Together song requests (WebSocket)
+
+The server advertises `together.request: 1`; clients opt in with
+`'together.request': true` alongside `together: true`. Opted-in room snapshots
+include `requests` and `requestsVersion` (initially 1). Each pending request has
+`{ id, song, requestedBy: { memberId, displayName }, at, status: 'pending' }`.
+Identity and timestamps come from the server; songs use the queue validation.
+
+Active members, including the host, call `together:request:add { song }`.
+Requests remain pending until the host calls `together:request:approve
+{ requestId, expectedQueueVersion? }` or `together:request:reject { requestId }`.
+The requester or host may call `together:request:remove { requestId }`.
+The host can reorder with `together:request:reorder { requestIds }`, an exact
+permutation of pending IDs. Add, reject, remove and reorder return null;
+approve returns the existing queue update ack and broadcasts the updated queue
+to everyone, including the host. Approval appends without changing currentId.
+
+Every request change broadcasts `together:onRequests { roomId, requests, version }`
+to opted-in members, including the sender, using its own increasing version.
+Only pending requests are kept. Leaving (including grace expiry or feature
+disable) drops the member's requests; room closure discards all state.
+
+Limits are 3 pending requests per device membership and 30 per room
+(`REQUEST_LIMIT`). Matching song id and source in pending requests or the queue
+returns `DUPLICATE_SONG`. Missing/already processed requests return
+`REQUEST_NOT_FOUND`; stale expected queue versions return `VERSION_CONFLICT`
+without modifying state. Host-only actions return `NOT_HOST`; removing another
+member's request returns `NOT_REQUESTER`. Existing queue size and host update
+rate limits also apply to approvals. Clients without the capability receive
+neither request fields in snapshots nor request pushes.
