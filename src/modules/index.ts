@@ -29,6 +29,7 @@ export { DislikeManage, DislikeEvent, type DislikeEventType } from './dislike'
 export { PlayHistoryManage } from './playHistory'
 
 export const featureVersion = {
+  'device.command': 1,
   list: 1,
   dislike: 1,
   // Lux only. Legacy clients compare list/dislike by exact version and ignore unknown keys.

@@ -48,6 +48,7 @@ declare namespace LX {
       'together.chat'?: boolean
       /** Opt in to song requests and together:onRequests pushes. */
       'together.request'?: boolean
+      'device.command'?: boolean | 1
     }
     type SupportedFeatures = Partial<{ [k in keyof EnabledFeatures]: number } & {
       /** Optional record fields; does not require separate client enablement. */

@@ -51,6 +51,7 @@ const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
     if (feature['together.chat'] != null) socket.feature['together.chat'] = !!feature['together.chat']
     if (feature['together.request'] != null) socket.feature['together.request'] = !!feature['together.request']
     if (feature['together.reaction'] != null) socket.feature['together.reaction'] = !!feature['together.reaction']
+    if (feature['device.command'] != null) socket.feature['device.command'] = feature['device.command'] === true || feature['device.command'] === 1
     for (const run of pending) await run()
   },
 }

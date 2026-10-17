@@ -141,6 +141,7 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
 
   wss.on('connection', function(socket, request) {
     socket.isReady = false
+    socket.connectedAt = socket.lastActiveAt = Date.now()
     socket.moduleReadys = {
       list: false,
       dislike: false,
@@ -214,6 +215,7 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
         }
         // Dispatch in wire order without waiting for async RPC handlers, which
         // may themselves need a later incoming reply to finish.
+        socket.lastActiveAt = Date.now()
         msg2call.message(syncData)
       },
       onError: error => {
