@@ -1,6 +1,6 @@
 import { type IncomingMessage } from 'node:http'
 import { WebSocketServer } from 'ws'
-import { registerLocalSyncEvent, callObj, sync } from './sync'
+import { registerLocalSyncEvent, unregisterLocalSyncEvent, callObj, sync } from './sync'
 import { authConnect } from './auth'
 import { getAddress, sendStatus, decryptMsg, encryptMsg } from '@/utils/tools'
 import { accessLog, startupLog, syncLog } from '@/utils/log4js'
@@ -126,7 +126,7 @@ function onSocketError(err: Error) {
   console.error(err)
 }
 
-const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Promise((resolve, reject) => {
+const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Promise<ReturnType<typeof createApp>>((resolve, reject) => {
   const app = createApp()
   const httpServer = app.server
 
@@ -292,7 +292,7 @@ const handleStartServer = async(port = 9527, ip = '127.0.0.1') => await new Prom
     }
     const bind = typeof addr == 'string' ? `pipe ${addr}` : `port ${addr.port}`
     startupLog.info(`Listening on ${ip} ${bind}`)
-    resolve(null)
+    resolve(app)
     void registerLocalSyncEvent(wss as LX.SocketServer)
   })
 
@@ -373,6 +373,48 @@ export const startServer = async(port: number, ip: string) => {
 }
 
 export const getStatus = (): LX.Sync.Status => status
+
+/**
+ * TEST-ONLY lifecycle hook: exercise the real HTTP/WS startup on an ephemeral
+ * loopback port and release its listeners/heartbeat without changing production
+ * startup. Keeping the Fastify handle private otherwise makes integration tests
+ * unable to discover port 0 or shut down the in-process server.
+ */
+export const startServerForTests = async() => {
+  const app = await handleStartServer(0, '127.0.0.1').catch(error => {
+    // Tests must also release the heartbeat if binding is unavailable or fails.
+    wss?.close()
+    wss = null
+    throw error
+  })
+  const server = wss!
+  const address = app.server.address()
+  if (!address || typeof address == 'string') throw new Error('test server has no TCP address')
+  status.status = true
+  status.message = ''
+  status.address = ['127.0.0.1']
+  setServerStatus(status)
+  let closed = false
+  return {
+    port: address.port,
+    async close() {
+      if (closed) return
+      closed = true
+      unregisterLocalSyncEvent()
+      for (const socket of server.clients) socket.terminate()
+      await new Promise<void>((resolve, reject) => {
+        server.close(error => { if (error) reject(error); else resolve() })
+      })
+      await app.close()
+      if (wss === server) wss = null
+      status.status = false
+      status.message = ''
+      status.address = []
+      status.devices = []
+      setServerStatus(status)
+    },
+  }
+}
 
 // export const generateCode = async() => {
 //   status.code = handleGenerateCode()
