@@ -47,7 +47,25 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 2. **兼容旧客户端**：可以暂时保留 `LX_USER_*` 或 `config.users`，但连接码必须全局唯一（与托管用户的 `lxSyncCode` 也不能撞车）。
 3. **生产环境**：固定 `LUX_TOKEN_SECRET`；公网勿在未建管理员时裸暴露端口（见 README 中 bootstrap 保护说明）。
 
-## 4. 相关代码
+## 4. 登录令牌与设备会话
+
+- `POST /api/auth/login` 继续返回旧字段 `token`：有效期固定为 14 天、无 `sid` 的 JWT，旧客户端无需改动。另加 `accessToken`、`refreshToken`、`accessTokenExpiresAt`（Unix 毫秒）和 `sessionId`。注册和 bootstrap 仍只返回用户。
+- `accessToken` 默认有效 1 小时，携带 `sid`（会话 ID）及现有 `sessionVersion`；每次鉴权同时检查账号状态、版本及会话是否存在、未撤销且未过期。旧 `token` 保持原有鉴权方式。
+- 登录可传 `deviceId`、`deviceName`、`platform`；同一账号和非空 `deviceId` 再次登录会撤销旧会话。不传 `deviceId` 时，每次登录创建独立会话。
+- `POST /api/auth/refresh` 接收 `{ refreshToken }`，返回新的 `accessToken`、`refreshToken`、`accessTokenExpiresAt`、`sessionId`。刷新令牌为不透明随机值，默认有效 90 天，每次刷新滑动续期。刷新会更新 `lastActiveAt`，旧刷新令牌立即失效。
+- 每个会话是一条刷新令牌家族，保存 generation 和已轮换令牌的 SHA-256 哈希用于重放检测。重用已轮换令牌会撤销整个会话，连同该家族最新的刷新令牌也失效。未知、过期、已撤销或重放返回 401；沿用按 IP 的失败次数限制（达到限制后 403）。客户端应串行刷新并及时保存新令牌。
+- 携带 `sid` 的令牌调用 `POST /api/auth/logout` 只撤销当前会话；旧令牌登出仍提升 `sessionVersion`，使该账号全部 JWT 失效，同时撤销全部刷新会话。
+- 修改密码（包括管理员重置）或禁用账号会撤销全部会话；禁用也提升 `sessionVersion`。重新启用后需重新登录创建会话。自助改密仍返回替换用的旧格式 `token`。
+- 会话保存到 `DATA_PATH/lux/sessions.json`（与 `accounts.json` 同目录），只存刷新令牌哈希，不存原文。沿用原子写入和损坏/不可读文件备份后拒绝启动策略；临时文件不参与恢复。保存时清理撤销超过 30 天或过期超过 30 天的会话。会话管理 API 与同步设备密钥不属于本阶段。
+
+| 环境变量 | 默认值 | 含义 |
+| --- | --- | --- |
+| `LUX_ACCESS_TOKEN_TTL_SECONDS` | `3600` | 新 accessToken 有效秒数 |
+| `LUX_REFRESH_TOKEN_TTL_DAYS` | `90` | refreshToken 滑动有效天数 |
+
+TTL 必须是有限正数，否则使用默认值；不影响旧 `token` 的 14 天有效期。`LUX_TOKEN_SECRET` 继续用于签名两类 JWT。
+
+## 5. 相关代码
 
 - `src/account/store.ts`：`getSyncUsers()` / `refreshGlobalUsers()`
 - `src/index.ts`：启动时 `initAccountStore` 后覆盖 `global.lx.config.users`

@@ -4,6 +4,8 @@ import { randomBytes, createHash } from 'node:crypto'
 import { checkAndCreateDirSync } from '@/utils'
 import { filterFileName, toMD5 } from '@/utils'
 import { atomicWriteFileSync } from '@/utils/atomicWrite'
+import { loadStoreFile } from './storeFile'
+import { SessionStore } from './sessions'
 import { createSecret, hashPassword, hashPasswordSync, verifyPassword } from './password'
 import type { InviteCode, LuxAccountStoreData, LuxManagedUser, LuxUserRole, LuxUserView, PublicUserInfo } from './types'
 
@@ -49,6 +51,7 @@ const sanitizeUser = (user: LuxManagedUser): PublicUserInfo => ({
 export class AccountStore {
   private readonly filePath: string
   private data: LuxAccountStoreData
+  readonly sessions: SessionStore
   /** config.js / LX_USER_* users captured at process startup (before managed projection). */
   private baselineConfigUsers: LX.UserConfig[] = []
 
@@ -57,43 +60,18 @@ export class AccountStore {
     checkAndCreateDirSync(dir)
     this.filePath = path.join(dir, 'accounts.json')
     this.data = this.load()
+    this.sessions = new SessionStore(path.join(dir, 'sessions.json'))
     this.ensureEnvAdmin()
     this.saveSync()
   }
 
   private load() {
-    // lstat distinguishes a missing file from an unreadable file or dangling symlink.
-    try {
-      fs.lstatSync(this.filePath)
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code == 'ENOENT') return createEmptyStore()
-      return this.refuseCorruptStore(err)
-    }
-    try {
-      const data: unknown = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'))
-      if (!isValidStore(data)) throw new Error('Invalid accounts store shape')
-      if (!data.tokenSecret) data.tokenSecret = process.env.LUX_TOKEN_SECRET || createSecret()
-      data.users ??= []
-      data.invites ??= []
-      data.suppressedConfigUsernames ??= []
-      return data
-    } catch (err) {
-      return this.refuseCorruptStore(err)
-    }
-  }
-
-  private refuseCorruptStore(cause: unknown): never {
-    const backupPath = `${this.filePath}.corrupt-${new Date().toISOString().replace(/:/g, '-')}-${randomBytes(4).toString('hex')}`
-    let backupMessage: string
-    try {
-      fs.copyFileSync(this.filePath, backupPath, fs.constants.COPYFILE_EXCL)
-      backupMessage = `Backup saved to ${backupPath}.`
-    } catch (err) {
-      backupMessage = `Could not create backup at ${backupPath}: ${String(err)}.`
-    }
-    const message = `Accounts file ${this.filePath} is corrupt or unreadable. ${backupMessage} Refusing to start; original file was not changed. Restore a known-good backup or move the file away to start fresh.`
-    console.error(message, cause)
-    throw new Error(message)
+    const data = loadStoreFile(this.filePath, 'Accounts', isValidStore, createEmptyStore)
+    if (!data.tokenSecret) data.tokenSecret = process.env.LUX_TOKEN_SECRET || createSecret()
+    data.users ??= []
+    data.invites ??= []
+    data.suppressedConfigUsernames ??= []
+    return data
   }
 
   setBaselineConfigUsers(users: LX.UserConfig[]) {
@@ -295,6 +273,7 @@ export class AccountStore {
     const user = this.findManagedUserById(userId)
     if (!user) throw new Error('User not found')
     user.loginPasswordHash = await hashPassword(password)
+    this.sessions.revokeUser(userId)
     user.sessionVersion += 1
     user.updatedAt = now()
     this.saveSync()
@@ -305,6 +284,7 @@ export class AccountStore {
   invalidateSessions(userId: string) {
     const user = this.findManagedUserById(userId)
     if (!user) throw new Error('User not found')
+    this.sessions.revokeUser(userId)
     user.sessionVersion += 1
     user.updatedAt = now()
     this.saveSync()
@@ -346,6 +326,10 @@ export class AccountStore {
     if (data.gender !== undefined) user.gender = data.gender
     if (data.signature !== undefined) user.signature = data.signature
     if (data.role) user.role = data.role
+    if (data.status == 'disabled' && user.status != 'disabled') {
+      this.sessions.revokeUser(userId)
+      user.sessionVersion += 1
+    }
     if (data.status) user.status = data.status
     if (data.maxSnapshotNum !== undefined) user.maxSnapshotNum = data.maxSnapshotNum
     if (data['list.addMusicLocationType'] !== undefined) user['list.addMusicLocationType'] = data['list.addMusicLocationType']
@@ -427,6 +411,7 @@ export class AccountStore {
 
     const index = this.data.users.findIndex(candidate => candidate.id == userId)
     if (index < 0) throw new Error('User not found')
+    this.sessions.revokeUser(userId)
     this.data.users.splice(index, 1)
 
     if (this.baselineConfigUsers.some(entry => entry.name == username)) {

@@ -1,6 +1,8 @@
 import type { FastifyInstance } from 'fastify'
 import { getAccountStore } from '@/account/store'
 import { createToken } from '@/account/token'
+import { tokenTTL } from '@/account/sessions'
+import type { LuxManagedUser } from '@/account/types'
 import { canBootstrap } from './bootstrapGuard'
 import { clearAuthFailures, getRequestIP, isAuthRateLimited, recordAuthFailure } from './rateLimit'
 import { getOptionalString, getString, isRecord } from './utils'
@@ -19,6 +21,16 @@ const toPublicUser = (user: ReturnType<ReturnType<typeof getAccountStore>['findM
     source: user.source,
     status: user.status,
   }
+}
+
+const accessCredentials = (user: LuxManagedUser, sessionId: string) => {
+  const ttlMs = tokenTTL(process.env.LUX_ACCESS_TOKEN_TTL_SECONDS, 3600) * 1000
+  const issuedAt = Date.now()
+  const accessToken = createToken({
+    userId: user.id, username: user.username, role: user.role, sessionVersion: user.sessionVersion,
+    secret: getAccountStore().getTokenSecret(), sid: sessionId, ttlMs, issuedAt,
+  })
+  return { accessToken, accessTokenExpiresAt: issuedAt + ttlMs, sessionId }
 }
 
 export const registerAuthApi = async(app: FastifyInstance) => {
@@ -71,7 +83,28 @@ export const registerAuthApi = async(app: FastifyInstance) => {
       sessionVersion: user.sessionVersion,
       secret: store.getTokenSecret(),
     })
-    return { token, user: toPublicUser(user) }
+    const { session, refreshToken } = store.sessions.create(user.id, {
+      deviceId: getOptionalString(request.body.deviceId),
+      deviceName: getOptionalString(request.body.deviceName),
+      platform: getOptionalString(request.body.platform),
+    })
+    return { token, ...accessCredentials(user, session.id), refreshToken, user: toPublicUser(user) }
+  })
+
+  app.post('/api/auth/refresh', async(request, reply) => {
+    const ip = getRequestIP(request)
+    if (isAuthRateLimited(ip)) return reply.code(403).send({ message: 'Too many failed attempts, try again later' })
+    const refreshToken = isRecord(request.body) ? getString(request.body.refreshToken) : ''
+    const store = getAccountStore()
+    const rotated = refreshToken ? store.sessions.rotate(refreshToken) : null
+    const user = rotated && store.findManagedUserById(rotated.session.userId)
+    if (!rotated || !user || user.status != 'active') {
+      if (rotated) store.sessions.revoke(rotated.session.id)
+      recordAuthFailure(ip)
+      return reply.code(401).send({ message: 'Invalid refresh token' })
+    }
+    clearAuthFailures(ip)
+    return { ...accessCredentials(user, rotated.session.id), refreshToken: rotated.refreshToken }
   })
 
   app.get('/api/auth/me', { preHandler: requireAuth }, async(request: AuthRequest) => ({
@@ -81,7 +114,8 @@ export const registerAuthApi = async(app: FastifyInstance) => {
   app.post('/api/auth/logout', { preHandler: requireAuth }, async(request: AuthRequest) => {
     const user = request.authUser
     if (!user) return { ok: true }
-    getAccountStore().invalidateSessions(user.id)
+    if (request.authSessionId) getAccountStore().sessions.revoke(request.authSessionId)
+    else getAccountStore().invalidateSessions(user.id)
     return { ok: true }
   })
 
