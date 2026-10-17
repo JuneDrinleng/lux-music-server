@@ -84,7 +84,7 @@ export const registerAdminApi = async(app: FastifyInstance) => {
     }
   })
 
-  app.patch('/api/admin/users/:id', { preHandler: requireAdmin }, async(request, reply) => {
+  app.patch('/api/admin/users/:id', { preHandler: requireAdmin }, async(request: AuthRequest, reply) => {
     if (!isRecord(request.body)) return reply.code(400).send({ message: 'Invalid body' })
     const id = (request.params as { id?: string }).id
     if (!id) return reply.code(400).send({ message: 'Missing user id' })
@@ -98,13 +98,16 @@ export const registerAdminApi = async(app: FastifyInstance) => {
         status: getStatusValue(request.body.status),
         maxSnapshotNum: getNumber(request.body.maxSnapshotNum),
         'list.addMusicLocationType': getAddMusicLocationType(request.body['list.addMusicLocationType']),
-      })
+      }, getRequiredAuthUser(request).id)
       if (user.status == 'disabled') {
         disconnectUserSessions(user.username)
         getRoomManager().evictUser(id)
       }
       return { user }
     } catch (err: any) {
+      if (err.message == 'Cannot disable or demote yourself' || err.message == 'Cannot disable or demote the last active admin') {
+        return reply.code(409).send({ message: err.message })
+      }
       return reply.code(404).send({ message: err.message })
     }
   })
