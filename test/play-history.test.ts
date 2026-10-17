@@ -191,6 +191,7 @@ describe('play history protocol', () => {
     assert.equal(featureVersion.list, 1)
     assert.equal(featureVersion.dislike, 1)
     assert.equal(featureVersion.playHistory, 1)
+    assert.equal(featureVersion['playHistory.outcome'], 1)
     assert.equal(typeof callObj[PLAY_HISTORY_PUSH], 'function')
     assert.equal(typeof callObj[PLAY_HISTORY_PULL], 'function')
     assert.equal(typeof callObj.onListSyncAction, 'function')
@@ -202,11 +203,11 @@ describe('play history protocol', () => {
     const legacyFile = path.join(global.lx.userPath, getUserDirname('legacy-user'), 'playHistory', 'records.json')
     assert.equal(fs.existsSync(legacyFile), false)
 
-    let advertised: { list: number, dislike: number, playHistory?: number } | null = null
+    let advertised: LX.Sync.SupportedFeatures | null = null
     const negotiating = socketFor('lux-user', false)
     negotiating.onClose = () => () => {}
     negotiating.remote = {
-      async getEnabledFeatures(_serverType: string, supported: { list: number, dislike: number, playHistory?: number }) {
+      async getEnabledFeatures(_serverType: string, supported: LX.Sync.SupportedFeatures) {
         advertised = supported
         return {}
       },
@@ -216,6 +217,7 @@ describe('play history protocol', () => {
     assert.equal(advertised?.list, 1)
     assert.equal(advertised?.dislike, 1)
     assert.equal(advertised?.playHistory, 1)
+    assert.equal(advertised?.['playHistory.outcome'], 1)
     assert.equal(negotiating.moduleReadys.playHistory, false)
 
     negotiating.remote.getEnabledFeatures = async() => ({ playHistory: true })
@@ -227,7 +229,8 @@ describe('play history protocol', () => {
     assert.equal(negotiating.moduleReadys.playHistory, false)
   })
 
-  it('routes playHistory:push and playHistory:pull through message2call', async() => {
+  it('round-trips mixed old/new records through message2call with first-write-wins outcomes', async() => {
+    const oldSocket = socketFor('rpc-user', true)
     const socket = socketFor('rpc-user', true)
     let client!: ReturnType<typeof createMsg2call>
     const server = createMsg2call({
@@ -247,15 +250,56 @@ describe('play history protocol', () => {
     })
 
     const remote = client.remote as Record<string, (payload?: unknown) => Promise<any>>
-    const pushed = await remote[PLAY_HISTORY_PUSH]({ records: [record('phone', 8)] })
+    const old = record('phone', 8)
+    const outcomes = [
+      record('pad', 9, { completed: true }),
+      record('pad', 10, { skipped: true }),
+      record('pad', 11, { completed: false, skipped: false }),
+      record('pad', 12, { completed: true, skipped: false }),
+      record('pad', 13, { completed: false, skipped: true }),
+      record('pad', 14, { completed: false }),
+      record('pad', 15, { skipped: false }),
+    ]
+    const pushed = await handler[PLAY_HISTORY_PUSH](oldSocket, { records: [old] })
     assert.equal(pushed.accepted, 1)
+    const newPush = await remote[PLAY_HISTORY_PUSH]({
+      records: [...outcomes, record('pad', 9, { skipped: true })],
+    })
+    assert.equal(newPush.accepted, outcomes.length)
+    assert.equal(newPush.ignored, 1)
     const pulled = await remote[PLAY_HISTORY_PULL]()
-    assert.equal(pulled.records[0].id, 'phone:8')
+    assert.deepEqual(pulled.records, [old, ...outcomes])
     assert.equal(pulled.hasMore, false)
-    const retry = await remote[PLAY_HISTORY_PUSH]({ records: [record('phone', 8, { listenedMs: 1 })] })
-    assert.deepEqual(retry, { accepted: 0, ignored: 1, cursor: pushed.cursor })
+
+    // Reload the persisted records before retrying from clients with different flags.
+    releaseUserSpace('rpc-user', true)
+    assert.deepEqual((await remote[PLAY_HISTORY_PULL]()).records, [old, ...outcomes])
+    const retry = await remote[PLAY_HISTORY_PUSH]({ records: [
+      record('phone', 8, { listenedMs: 1, completed: true }),
+      record('pad', 9, { skipped: true }),
+    ] })
+    assert.deepEqual(retry, { accepted: 0, ignored: 2, cursor: newPush.cursor })
+    assert.deepEqual(await handler[PLAY_HISTORY_PUSH](oldSocket, { records: [record('pad', 10)] }), {
+      accepted: 0, ignored: 1, cursor: newPush.cursor,
+    })
+    assert.deepEqual((await remote[PLAY_HISTORY_PULL]()).records, [old, ...outcomes])
+    assert.deepEqual((await handler[PLAY_HISTORY_PULL](oldSocket)).records, [old, ...outcomes])
     const again = await remote[PLAY_HISTORY_PULL]({ since: pulled.cursor })
     assert.deepEqual(again.records, [])
+
+    for (const field of ['completed', 'skipped']) {
+      for (const value of [null, 0, 1, '', 'true', [], {}]) {
+        await assert.rejects(remote[PLAY_HISTORY_PUSH]({ records: [
+          record('phone', 20),
+          { ...record('phone', 21), [field]: value },
+        ] }), new RegExp(`records\\[1\\]\\.${field} must be a boolean`))
+      }
+    }
+    await assert.rejects(remote[PLAY_HISTORY_PUSH]({ records: [
+      record('phone', 20),
+      record('phone', 21, { completed: true, skipped: true }),
+    ] }), /completed and skipped must not both be true/)
+    assert.deepEqual(await remote[PLAY_HISTORY_PULL](), pulled)
 
     socket.moduleReadys.playHistory = false
     await assert.rejects(remote[PLAY_HISTORY_PULL]({ since: 0 }), /playHistory is not enabled/)

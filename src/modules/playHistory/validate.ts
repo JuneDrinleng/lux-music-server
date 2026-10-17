@@ -56,7 +56,17 @@ export const parseRecord = (input: unknown, index?: number): LX.Sync.PlayHistory
   if (interval != null) song.interval = interval
   if (img != null) song.img = img
 
-  return { id, deviceId, startedAt, endedAt, listenedMs, song }
+  const record: LX.Sync.PlayHistory.Record = { id, deviceId, startedAt, endedAt, listenedMs, song }
+  for (const field of ['completed', 'skipped'] as const) {
+    if (!(field in input)) continue
+    const value = input[field]
+    if (typeof value != 'boolean') throw new PlayHistoryValidationError(`${at}.${field} must be a boolean`)
+    record[field] = value
+  }
+  if (record.completed && record.skipped) {
+    throw new PlayHistoryValidationError(`${at}.completed and skipped must not both be true`)
+  }
+  return record
 }
 
 export const parsePushPayload = (payload: unknown): LX.Sync.PlayHistory.Record[] => {

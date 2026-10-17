@@ -8,6 +8,8 @@ export const PLAY_HISTORY_PULL = 'playHistory:pull' as const
 
 /** Advertised on the existing getEnabledFeatures handshake. Do not bump list/dislike. */
 export const PLAY_HISTORY_FEATURE_VERSION = 1
+/** Optional completed/skipped fields, advertised without changing module enablement. */
+export const PLAY_HISTORY_OUTCOME_FEATURE_VERSION = 1
 
 export const PLAY_HISTORY_LIMITS = {
   maxBatch: 500,
