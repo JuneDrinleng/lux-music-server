@@ -67,7 +67,7 @@ jobs:
 
       - name: Run and require /hello, non-root process, and healthy status
         run: |
-          set -euo pipefail
+          set -xeuo pipefail
           data_dir="$(mktemp -d)"
           cleanup() {
             status=$?
@@ -120,7 +120,7 @@ jobs:
               docker exec lux-ci test -f /server/data/data/lux/accounts.json
             fi
             docker exec lux-ci sh -c '
-              set -eu
+              set -eux
               test "$(cat /proc/1/comm)" = node
               test "$(awk "/^Uid:/ { print \$2 }" /proc/1/status)" = 1000
               if [ -f /server/data/data/lux/accounts.json ]; then test "$(stat -c %u /server/data/data/lux/accounts.json)" = 1000; fi
