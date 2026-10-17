@@ -102,6 +102,7 @@ TTL 必须是有限正数，否则使用默认值；不影响旧 `token` 的 14 
   "version": "0.0.1",
   "packageVersion": "0.0.1",
   "minClientVersion": null,
+  "publicUrl": null,
   "registration": { "inviteOnly": true, "enabled": true },
   "features": ["sessions", "refresh", "me-sessions", "invite-check"]
 }
@@ -110,6 +111,7 @@ TTL 必须是有限正数，否则使用默认值；不影响旧 `token` 的 14 
 `version` 优先使用 `LUX_VERSION`，否则使用 `package.json`；`packageVersion` 始终是包版本。
 现有 Docker 发布未设置 `LUX_VERSION`，但 release workflow 在构建前将发布版本写入包文件。
 `minClientVersion` 来自 `LUX_MIN_CLIENT_VERSION`，未设置时为 `null`。
+`publicUrl` 来自 `LUX_PUBLIC_URL`，未设置或不是无末尾斜杠的 HTTP(S) 基址时为 `null`（非法值会警告）；配置方法见 [fnOS 部署指南](deploy-fnos.md)。
 `enabled` 表示邀请码注册端点可用，不代表当前一定有可用邀请码。服务端不报告 HTTPS 状态，客户端自行判断。
 
 `GET /api/auth/invite/check?inviteCode=...` 或 `POST /api/auth/invite/check` JSON

@@ -41,7 +41,7 @@ describe('server discovery and invite registration', () => {
     assert.equal(res.statusCode, 200)
     assert.equal(res.headers['cache-control'], 'no-store')
     const expected = {
-      name: global.lx.config.serverName, version, packageVersion: version, minClientVersion: null,
+      name: global.lx.config.serverName, version, packageVersion: version, minClientVersion: null, publicUrl: null,
       registration: { inviteOnly: true, enabled: true }, features: ['sessions', 'refresh', 'me-sessions', 'invite-check'],
     }
     assert.deepEqual(parseJson(res.body), expected)

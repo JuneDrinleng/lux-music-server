@@ -1,6 +1,5 @@
 import type { FastifyRequest } from 'fastify'
 import store from '@/utils/cache'
-import { getIP } from '@/utils/tools'
 
 /** Mirror /ah: block after 10 failures per key (IP or account). */
 export const AUTH_FAIL_LIMIT = 10
@@ -9,8 +8,6 @@ const ipKey = (ip: string) => `lux-auth:ip:${ip}`
 const userKey = (username: string) => `lux-auth:user:${username.toLowerCase()}`
 
 export const getRequestIP = (request: FastifyRequest) => {
-  const fromProxyOrSocket = getIP(request.raw)
-  if (fromProxyOrSocket) return fromProxyOrSocket
   return request.ip || request.socket.remoteAddress || ''
 }
 

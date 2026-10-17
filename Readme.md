@@ -209,6 +209,8 @@ server {
 | `PORT` | 绑定的端口号，默认为 `9527`。 |
 | `BIND_IP` | 绑定的 IP 地址，默认为 `127.0.0.1`，使用 `0.0.0.0` 将接受所有 IPv4 请求，使用 `::` 将接受所有 IP 请求。 |
 | `PROXY_HEADER` | 代理转发的请求头 原始 IP，如果设置，则自动启用。 |
+| `LUX_TRUST_PROXY` | HTTP API 的 Fastify 代理信任，默认关闭。`1`/`true` 信任所有代理，整数跳数或逗号分隔 IP/CIDR 限定信任范围；HTTP 限流使用 `request.ip`。`PROXY_HEADER` 仍独立用于 WS／`/ah`，详见 [fnOS 指南](docs/deploy-fnos.md)。 |
+| `LUX_PUBLIC_URL` | 可选公开 HTTP(S) 基址，无末尾 `/`、账号密码、查询及片段；在 `/api/server-info` 返回 `publicUrl`。未设置或非法时为 `null`，非法值会警告。 |
 | `CONFIG_PATH` | 配置文件路径，默认使用项目目录下的 `config.js`。 |
 | `LOG_PATH` | 服务日志保存路径，默认保存在服务目录下的 `logs` 文件夹内。 |
 | `DATA_PATH` | 同步数据保存路径，默认保存在服务目录下的 `data` 文件夹内。 |
@@ -236,6 +238,8 @@ server {
 ### Docker
 
 本项目提供 Dockerfile 与 `docker-compose.yml`，可直接构建镜像并部署到服务器。
+
+飞牛 NAS 用户见 [fnOS 部署指南（Compose + PassNAT HTTPS）](docs/deploy-fnos.md)。
 
 #### 构建镜像
 
@@ -338,6 +342,8 @@ http://<服务器 IP>:9527/admin
 ```bash
 -e PROXY_HEADER=x-real-ip
 ```
+
+HTTP API 的真实 IP 和限流另由 `LUX_TRUST_PROXY` 控制（默认关闭），请按实际代理 IP/CIDR 或跳数配置；`PROXY_HEADER` 保持用于 WS／`/ah`，不会开启 HTTP 代理信任。详见 [fnOS 部署指南](docs/deploy-fnos.md)。
 
 一起听房间为单实例内存状态，Docker 部署时请保持**一个**同步服务实例；多副本需等后续版本支持共享存储后再考虑。
 

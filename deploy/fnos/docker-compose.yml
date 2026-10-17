@@ -1,0 +1,26 @@
+services:
+  lux-music-server:
+    image: docker.io/junedrinleng/lux-music-server:latest
+    # 开发版：docker.io/junedrinleng/lux-music-server:dev
+    # 备用源：ghcr.io/junedrinleng/lux-music-server:latest（开发版用 :dev）
+    container_name: lux-music-server
+    ports:
+      - "9527:9527"
+    volumes:
+      - ./data:/server/data
+    environment:
+      TZ: Asia/Shanghai
+      # 必填：先运行 openssl rand -hex 32，将结果填入 .env。
+      LUX_TOKEN_SECRET: ${LUX_TOKEN_SECRET:?请使用 openssl rand -hex 32 生成并设置 LUX_TOKEN_SECRET}
+      LUX_ADMIN_USER: ${LUX_ADMIN_USER:-}
+      LUX_ADMIN_PASSWORD: ${LUX_ADMIN_PASSWORD:-}
+      PROXY_HEADER: x-forwarded-for
+      LUX_TRUST_PROXY: ${LUX_TRUST_PROXY:-0}
+      LUX_PUBLIC_URL: ${LUX_PUBLIC_URL:-}
+    restart: unless-stopped
+    # HEALTHCHECK 已包含在镜像中。
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
