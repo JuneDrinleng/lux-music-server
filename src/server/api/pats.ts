@@ -25,10 +25,15 @@ export const registerPatHooks = (app: FastifyInstance) => {
   const windows = new Map<string, { at: number, count: number }>()
   const contexts = new WeakMap<FastifyRequest, string>()
   app.addHook('onRequest', async(request, reply) => {
-    if (!request.url.startsWith('/api/v1/')) return
+    const mcp = request.url.split('?')[0] == '/mcp'
+    if (!mcp && !request.url.startsWith('/api/v1/')) return
     reply.header('Cache-Control', 'no-store')
-    const { token } = authenticatePat(request)
-    contexts.set(request, token.id)
+    let token
+    try { ({ token } = authenticatePat(request)) } catch (error) {
+      if (mcp) reply.header('WWW-Authenticate', 'Bearer realm="lux-music", error="invalid_token"')
+      throw error
+    }
+    if (!mcp) contexts.set(request, token.id)
     const now = Date.now()
     for (const [id, window] of windows) if (now - window.at >= 60000) windows.delete(id)
     const window = windows.get(token.id) ?? { at: now, count: 0 }

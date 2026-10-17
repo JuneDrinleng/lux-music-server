@@ -434,3 +434,7 @@ room), `roomId`, `senderId` (canonical device), `displayName`, `text`, `at`, and
 `clientMsgId`. Only active room members may retrieve history. Closed rooms
 (and rooms lost on server restart) are inaccessible via RPC to everyone, while
 their JSONL files remain permanently on disk. There is no retention cleanup.
+
+### MCP AI 助手
+
+通过 `/mcp` 连接 Claude Code、Codex CLI、Cursor 或 Grok Bot，配置与权限见 [MCP 使用指南](docs/mcp.md)。
