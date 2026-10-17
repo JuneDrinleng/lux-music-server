@@ -161,6 +161,8 @@ jobs:
           test -d server
           zip -r "lux-music-server_${TAG}.zip" server ecosystem.config.js config.js index.js package-lock.json package.json LICENSE Readme.md
 
+      - uses: docker/setup-qemu-action@v4
+
       - uses: docker/setup-buildx-action@v4
 
       - name: 登录 GHCR
@@ -174,11 +176,14 @@ jobs:
         id: hub
         env:
           DOCKERHUB_USER: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -z "${DOCKERHUB_USER:-}" ]; then
+          if [ -z "${DOCKERHUB_USER:-}" ] || [ -z "${DOCKERHUB_TOKEN:-}" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
-            echo "未配置 DOCKERHUB_USERNAME，只推 GHCR"
+            warning="WARNING: DOCKERHUB_USERNAME or DOCKERHUB_TOKEN is missing; pushing GHCR only."
+            echo "::warning::$warning"
+            echo "$warning" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "enabled=true" >> "$GITHUB_OUTPUT"
             echo "image=docker.io/${DOCKERHUB_USER}/lux-music-server" >> "$GITHUB_OUTPUT"
@@ -244,8 +249,14 @@ jobs:
             else
               echo "同步 $src -> $dst"
               docker buildx imagetools create "$src" -t "$dst"
+              printf -- '- Pushed (synced): `%s` → `%s`\n' "$src" "$dst" >> "$GITHUB_STEP_SUMMARY"
             fi
           done < <(node scripts/image-tags.mjs "$IMAGE" "$VERSION" "$PRE")
+
+      - name: Image creation timestamp
+        id: metadata
+        if: steps.image.outputs.exists != 'true'
+        run: echo "created=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
 
       - name: 构建并推送镜像
         if: steps.image.outputs.exists != 'true'
@@ -253,18 +264,29 @@ jobs:
         with:
           context: .
           file: ./Dockerfile
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
           push: true
           provenance: false
           sbom: false
           tags: ${{ steps.tags.outputs.tags }}
-          labels: |
-            org.opencontainers.image.source=https://github.com/${{ github.repository }}
-            org.opencontainers.image.version=${{ env.VERSION }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.licenses=Apache-2.0
+          build-args: |
+            VERSION=${{ env.VERSION }}
+            REVISION=${{ github.sha }}
+            CREATED=${{ steps.metadata.outputs.created }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Summarize pushed image tags
+        if: steps.image.outputs.exists != 'true'
+        env:
+          PUSHED_TAGS: ${{ steps.tags.outputs.tags }}
+        run: |
+          {
+            echo '### Pushed image tags'
+            while IFS= read -r tag; do
+              [ -z "$tag" ] || printf -- '- `%s`\n' "$tag"
+            done <<< "$PUSHED_TAGS"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: 创建 Release（已有 Release 会失败，不覆盖）
         env:
