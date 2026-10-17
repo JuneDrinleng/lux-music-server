@@ -1,4 +1,4 @@
-import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, Role, TogetherRoomsResponse, UserStatus, UserView } from '@/types'
+import type { PersonalToken, AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, Role, TogetherRoomsResponse, UserStatus, UserView } from '@/types'
 
 export const tokenKey = 'lux_sync_admin_token'
 
@@ -62,6 +62,10 @@ export const authApi = {
 }
 
 export const meApi = {
+  tokens: () => request<{ tokens: PersonalToken[] }>('/api/me/tokens'),
+  createToken: (body: { name: string, scopes: string[], expiry: string }) => request<PersonalToken & { token: string }>('/api/me/tokens', { method: 'POST', body: jsonBody(body) }),
+  revokeToken: (id: string) => request<{ ok: boolean }>(`/api/me/tokens/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  serverInfo: () => request<{ mcpUrl?: string }>('/api/server-info'),
   devices: () => request<{ devices: Device[] }>('/api/me/devices'),
   deleteDevice: (clientId: string) => request<{ ok: boolean }>(`/api/me/devices/${encodeURIComponent(clientId)}`, { method: 'DELETE' }),
   playlists: () => request<{ playlists: PlaylistSummary }>('/api/me/playlists'),

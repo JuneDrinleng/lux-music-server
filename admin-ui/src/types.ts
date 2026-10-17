@@ -78,10 +78,21 @@ export interface Invite {
   usedBy: Array<{ userId: string, username: string, usedAt: number }>
 }
 
-export type SectionId = 'overview' | 'devices-playlists' | 'account-sync' | 'admin-status' | 'users' | 'invites'
+export type SectionId = 'tokens' | 'overview' | 'devices-playlists' | 'account-sync' | 'admin-status' | 'users' | 'invites'
 
 export interface TogetherRoomsResponse {
   activeRooms: number
   members: number
   onlineMembers: number
+}
+
+export interface PersonalToken {
+  id: string
+  name: string
+  scopes: string[]
+  createdAt: number
+  expiresAt: number | null
+  lastUsedAt: number | null
+  revokedAt: number | null
+  last4: string
 }

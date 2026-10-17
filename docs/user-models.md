@@ -103,6 +103,7 @@ TTL 必须是有限正数，否则使用默认值；不影响旧 `token` 的 14 
   "packageVersion": "0.0.1",
   "minClientVersion": null,
   "publicUrl": null,
+  "mcp": { "tokens": true },
   "registration": { "inviteOnly": true, "enabled": true },
   "features": ["sessions", "refresh", "me-sessions", "invite-check"]
 }
@@ -131,3 +132,32 @@ TTL 必须是有限正数，否则使用默认值；不影响旧 `token` 的 14 
 - `src/index.ts`：启动时 `initAccountStore` 后覆盖 `global.lx.config.users`
 - `src/server/auth.ts`：`/ah` 连接码鉴权
 - `docs/sync-server-mobile-flow.md`：同步协议与 Lux 模式边界
+
+## 7. MCP 访问令牌（PR 4.5）
+
+所有活跃托管账号都可用正常登录 JWT 管理自己的 PAT：`GET /api/me/tokens`
+返回 `{ tokens: [...] }`（包括已吊销条目）；`POST /api/me/tokens` 接收
+`{ name, scopes, expiry }`，成功返回 201 `{ token, ...meta }`，原文只返回这一次。
+名称去除首尾空白后为 1–40 字符，权限至少一个，仅允许 `playlist:read`、
+`playlist:write`、`history:read`、`player:control`、`together:request`。
+有效期仅允许 `30d`（30 天）、`1y`（365 天）、`never`（默认由 UI 选择，API 必填）。
+`DELETE /api/me/tokens/:id` 幂等吊销；不存在或他人令牌统一 404 `TOKEN_NOT_FOUND`。
+列表及创建元数据只含 id、name、scopes、createdAt、expiresAt、lastUsedAt、revokedAt、last4；
+时间为 Unix 毫秒，后三个时间字段未设置时为 null。UI 隐藏已吊销条目，过期条目变灰。
+
+PAT 格式为 `lux_mcp_` 加 32 字节随机数的 base64url 编码，存入
+`DATA_PATH/lux/tokens.json` 的只有 SHA-256 哈希和显示尾号，不存原文。
+沿用会话库的原子替换及损坏备份后拒绝启动策略。最后使用时间每枚令牌至多每分钟写盘一次。
+PAT 不用于现有登录/管理/同步接口，也不能管理令牌；后续 `/api/v1` 和 `/mcp`
+接口应调用 `authenticatePat(request, requiredScopes)`。本 PR 仅开放
+`GET /api/v1/token/whoami`，返回 `{ name, scopes, username }`。
+无效、过期、吊销或所属用户禁用/删除均为 401；缺少所需权限为 403。
+
+**生命周期选择：** 禁用仅通过每次请求检查账号状态阻止 PAT，不自动吊销。
+重新启用后未吊销且未过期的 PAT 恢复可用；已吊销 PAT 永不恢复。
+删除用户后 PAT 因用户不存在失效，同名新用户不会继承令牌。
+密码变更和会话退出不吊销独立的 PAT，用户可在令牌页手动吊销。
+
+`GET /api/server-info` 新增 `mcp: { tokens: true }`；配置有效 `LUX_PUBLIC_URL`
+时新增 `mcpUrl: <publicUrl>/mcp`，否则省略。UI 回退到当前 origin + `/mcp`。
+`/mcp` 将在 PR 4.7 实现，本 PR 不注册该端点。

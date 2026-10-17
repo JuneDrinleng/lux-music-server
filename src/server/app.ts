@@ -10,6 +10,7 @@ import { registerSyncKeyRevocation } from './server'
 import { registerAdminApi } from './api/admin'
 import { registerAuthApi } from './api/auth'
 import { registerMeApi } from './api/me'
+import { registerPatApi } from './api/pats'
 import { registerSyncApi } from './api/sync'
 import { registerTogetherApi } from './api/together'
 import { sendError } from './api/errors'
@@ -121,6 +122,8 @@ export const createApp = (): FastifyInstance => {
       packageVersion: SERVER_PACKAGE_VERSION,
       minClientVersion: process.env.LUX_MIN_CLIENT_VERSION?.trim() || null,
       publicUrl,
+      mcp: { tokens: true },
+      ...(publicUrl ? { mcpUrl: `${publicUrl}/mcp` } : {}),
       registration: { inviteOnly: true, enabled: true },
       features: ['sessions', 'refresh', 'me-sessions', 'invite-check'],
     }
@@ -148,6 +151,7 @@ export const createApp = (): FastifyInstance => {
 
   void app.register(registerAuthApi)
   void app.register(registerMeApi)
+  void app.register(registerPatApi)
   void app.register(registerAdminApi)
   void app.register(registerSyncApi)
   void app.register(registerTogetherApi)

@@ -18,6 +18,7 @@ import type { PublicUser, SectionId } from '@/types'
 
 const sectionTitles: Record<SectionId, string> = {
   overview: '总览',
+  tokens: 'MCP 访问令牌',
   'devices-playlists': '设备与歌单',
   'account-sync': '账号与连接码',
   'admin-status': '服务状态',
@@ -41,6 +42,7 @@ const navItems: NavItem[] = [
   { id: 'overview', label: '总览', description: '运行概况与快捷入口', tone: 'mine', icon: <IconOverview />, group: 'mine' },
   { id: 'devices-playlists', label: '设备与歌单', description: '客户端与同步数据', tone: 'mine', icon: <IconDevices />, group: 'mine' },
   { id: 'account-sync', label: '账号与连接码', description: '密码与客户端凭据', tone: 'mine', icon: <IconAccountKey />, group: 'mine' },
+  { id: 'tokens', label: 'MCP 访问令牌', description: 'AI 助手的权限与凭据', tone: 'mine', icon: <IconAccountKey />, group: 'mine' },
   { id: 'admin-status', label: '服务状态', description: '运行状态与地址', tone: 'admin', icon: <IconServerRack />, group: 'admin', adminOnly: true },
   { id: 'users', label: '用户', description: '账号、状态、连接码', tone: 'admin', icon: <IconUsers />, group: 'admin', adminOnly: true },
   { id: 'invites', label: '邀请码', description: '注册入口与使用次数', tone: 'admin', icon: <IconInvite />, group: 'admin', adminOnly: true },
@@ -51,6 +53,7 @@ const getVisibleNavItems = (user: PublicUser) => navItems.filter(item => !item.a
 const sectionEyebrow = (section: SectionId) => {
   if (section == 'overview') return `${greetingForNow()} · ${formatChineseDate()}`
   if (section == 'devices-playlists') return '同步数据'
+  if (section == 'tokens') return '个人'
   if (section == 'account-sync') return '个人'
   return '管理员'
 }
@@ -159,17 +162,19 @@ export function DashboardShell({
       ) : null}
 
       <main className="lux-main">
-        <div className="lux-topbar">
-          <div>
-            <div className="lux-eyebrow">{sectionEyebrow(activeSection)}</div>
-            <h1>{getSectionTitle(activeSection)}</h1>
+        {activeSection != 'tokens' ? (
+          <div className="lux-topbar">
+            <div>
+              <div className="lux-eyebrow">{sectionEyebrow(activeSection)}</div>
+              <h1>{getSectionTitle(activeSection)}</h1>
+            </div>
+            <div className="lux-right">
+              <button type="button" className="lux-btn cap" onClick={onRefresh}>
+                <IconRefresh />刷新全部
+              </button>
+            </div>
           </div>
-          <div className="lux-right">
-            <button type="button" className="lux-btn cap" onClick={onRefresh}>
-              <IconRefresh />刷新全部
-            </button>
-          </div>
-        </div>
+        ) : null}
         <div className="lux-stack">{children}</div>
       </main>
 
@@ -185,6 +190,9 @@ export function DashboardShell({
         <button type="button" className={activeSection == 'account-sync' ? 'd on' : 'd'} onClick={() => go('account-sync')}>
           {activeSection == 'account-sync' ? <div className="orb"><IconAccountKey /></div> : <IconAccountKey />}
           <span>账号</span>
+        </button>
+        <button type="button" className={activeSection == 'tokens' ? 'd on' : 'd'} onClick={() => go('tokens')}>
+          <IconAccountKey /><span>MCP 令牌</span>
         </button>
         {isAdmin ? (
           <button
