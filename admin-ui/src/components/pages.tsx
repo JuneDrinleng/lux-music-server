@@ -71,7 +71,6 @@ export const getSectionTitle = (id: SectionId) => {
     'admin-status': '服务状态',
     users: '用户',
     invites: '邀请码',
-    sources: '音源脚本',
   }
   return map[id]
 }

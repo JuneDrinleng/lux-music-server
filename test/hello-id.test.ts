@@ -31,4 +31,22 @@ describe('sync protocol contracts', () => {
     assert.equal(body.ok, true)
     assert.equal(typeof body.version, 'string')
   })
+
+  it('returns 404 for retired cloud source APIs', async() => {
+    const endpoints = [
+      { method: 'GET', url: '/api/admin/sources' },
+      { method: 'POST', url: '/api/admin/sources' },
+      { method: 'POST', url: '/api/admin/sources/retired/enable' },
+      { method: 'POST', url: '/api/admin/sources/retired/disable' },
+      { method: 'PUT', url: '/api/admin/sources/order' },
+      { method: 'DELETE', url: '/api/admin/sources/retired' },
+      { method: 'POST', url: '/api/admin/sources/retired/test' },
+      { method: 'GET', url: '/api/source/stream/retired' },
+    ] as const
+    for (const endpoint of endpoints) {
+      const res = await app.inject(endpoint)
+      assert.equal(res.statusCode, 404, `${endpoint.method} ${endpoint.url}`)
+      assert.equal(parseJson(res.body).message, 'API route not found')
+    }
+  })
 })

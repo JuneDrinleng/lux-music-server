@@ -26,10 +26,6 @@ services:
       # LUX_TOGETHER_MAX_MEMBERS: "10"
       # LUX_TOGETHER_MAX_ROOMS: "100"
       # LUX_TOGETHER_GRACE_MS: "30000"
-      # Lux 模式服务端音源解析（可选）
-      # LUX_SOURCE_TIMEOUT_MS: "15000"
-      # LUX_SOURCE_MEMORY_MB: "128"
-      # LUX_SOURCE_PROXY_STREAM: "false"
     volumes:
       - lux-music-server-data:/server/data
 

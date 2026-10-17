@@ -10,8 +10,6 @@ import { registerAuthApi } from './api/auth'
 import { registerMeApi } from './api/me'
 import { registerSyncApi } from './api/sync'
 import { registerTogetherApi } from './api/together'
-import { registerSourcesAdminApi } from './api/sources'
-import { registerSourceStreamApi } from './api/sourceStream'
 
 const readServerPackageVersion = () => {
   try {
@@ -136,8 +134,6 @@ export const createApp = (): FastifyInstance => {
   void app.register(registerAdminApi)
   void app.register(registerSyncApi)
   void app.register(registerTogetherApi)
-  void app.register(registerSourcesAdminApi)
-  void app.register(registerSourceStreamApi)
 
   app.setNotFoundHandler(async(request, reply) => {
     if (request.url.startsWith('/api/')) {
