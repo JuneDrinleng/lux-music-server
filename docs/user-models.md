@@ -161,3 +161,28 @@ PAT 不用于现有登录/管理/同步接口，也不能管理令牌；后续 `
 `GET /api/server-info` 新增 `mcp: { tokens: true }`；配置有效 `LUX_PUBLIC_URL`
 时新增 `mcpUrl: <publicUrl>/mcp`，否则省略。UI 回退到当前 origin + `/mcp`。
 `/mcp` 将在 PR 4.7 实现，本 PR 不注册该端点。
+
+## 8. PAT HTTP data API（PR 4.6）
+
+`/api/v1/*` 使用 PAT Bearer 鉴权，每枚令牌每分钟最多 60 次请求，超出返回
+429 `RATE_LIMITED`。响应禁止缓存。缺权限返回 403 `FORBIDDEN`。
+
+- `GET /api/v1/history`（`history:read`）：`from`/`to` 接受 ISO 时间或毫秒，
+  按 startedAt 闭区间过滤；新到旧排列，同时间按 id 降序。`limit` 默认 50、上限 200；
+  返回 `{ items, nextCursor }`，将不透明 nextCursor 原样传入 `cursor`，末页为 null。
+- `GET /api/v1/stats/top-tracks`（`history:read`）：相同时间过滤，按 source + songmid
+  聚合，返回 `{ items: [{ song, playCount }] }`；limit 默认 20、上限 100。
+- `GET /api/v1/playlists`（`playlist:read`）：返回 `{ items: [{ id, name, songCount,
+  source?, updatedAt? }] }`，包括 default、love 和用户列表。详情 `/:id` 返回
+  `{ items, total, offset, limit }`，offset 默认 0，limit 默认 50、上限 200。
+- `POST /api/v1/playlists`（`playlist:write`）：`{ name, songs? }`，名称去除首尾空白
+  后 1–60 字符，返回 201 `{ id, name, locationUpdateTime, added, skipped }`。
+  `POST /:id/songs { songs, position?: 'top'|'bottom' }` 返回 `{ added, skipped }`，
+  默认沿用用户添加位置配置；`DELETE /:id/songs { songIds }` 返回 `{ removed, skipped }`。
+  每次最多 500 首，按歌曲 id 去重。未知/他人列表统一 404。写操作沿用设备列表事件、
+  快照及实时同步广播，收到设备确认后更新同步基线。
+- `GET /api/v1/token/activity?limit=`：仅本 PAT 的 `{ items: [{ at, action, summary, ok }] }`，
+  新到旧；`GET /api/me/tokens/:id/activity` 使用登录会话，仅允许令牌所有者访问（否则 404）。
+  limit 默认 50、上限 200。每次已识别 PAT 的 v1 请求（activity 自身除外）追加成功/失败
+  日志，不含歌曲列表。每枚令牌保留最近 200 条，随 tokens.json 原子持久化。
+  MCP 可复用 `src/account/tokenActivity.ts` 的 `recordTokenActivity(tokenId, action, summary, ok)`。

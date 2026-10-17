@@ -4,6 +4,7 @@ import { type SnapshotDataManage } from './snapshotDataManage'
 
 export class ListDataManage {
   snapshotDataManage: SnapshotDataManage
+  readonly ready: Promise<void>
   userLists: LX.List.UserListInfo[] = []
   allMusicList = new Map<string, LX.Music.MusicInfo[]>()
 
@@ -11,7 +12,7 @@ export class ListDataManage {
     this.snapshotDataManage = snapshotDataManage
 
     let listData: LX.Sync.List.ListData | null
-    void this.snapshotDataManage.getSnapshotInfo().then(async(snapshotInfo) => {
+    this.ready = this.snapshotDataManage.getSnapshotInfo().then(async(snapshotInfo) => {
       if (snapshotInfo.latest) listData = await this.snapshotDataManage.getSnapshot(snapshotInfo.latest)
       if (!listData) listData = { defaultList: [], loveList: [], userList: [] }
       this.allMusicList.set(LIST_IDS.DEFAULT, listData.defaultList)
@@ -24,6 +25,7 @@ export class ListDataManage {
   }
 
   getListData = async(): Promise<LX.Sync.List.ListData> => {
+    await this.ready
     return {
       defaultList: this.allMusicList.get(LIST_IDS.DEFAULT) ?? [],
       loveList: this.allMusicList.get(LIST_IDS.LOVE) ?? [],
