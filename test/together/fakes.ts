@@ -50,6 +50,8 @@ export const createFakeSocket = (clientId: string, userName: string, deviceName 
     },
   })
   const socket = {
+    readyState: 1,
+    isReady: true,
     keyInfo: { clientId, deviceName, key: '', isMobile: true },
     userInfo: { name: userName },
     moduleReadys: { list: false, dislike: false, playHistory: false, together: true },
@@ -61,6 +63,7 @@ export const createFakeSocket = (clientId: string, userName: string, deviceName 
       return () => { closeHandlers.splice(closeHandlers.indexOf(handler), 1) }
     },
     close() {
+      socket.readyState = 3
       for (const handler of closeHandlers.splice(0)) handler(new Error('closed'))
     },
     takePushes(method?: string) {
@@ -79,12 +82,13 @@ export const accounts: Record<string, MemberAccount> = {
   dave: { userId: 'u_dave', username: 'dave', displayName: 'dave', avatar: '' },
 }
 
-export const createTestManager = (config: Partial<TogetherConfig> = {}) => {
+export const createTestManager = (config: Partial<TogetherConfig> = {}, aliases: Record<string, string> = {}) => {
   const fake = createFakeClock()
   const manager = new RoomManager({
     config: { maxMembers: 10, maxRooms: 100, graceMs: 30_000, ...config },
     clock: fake.clock,
     getAccount: socket => accounts[socket.userInfo.name] ?? null,
+    getDeviceClientId: socket => aliases[socket.keyInfo.clientId] ?? socket.keyInfo.clientId,
   })
   return { manager, ...fake }
 }

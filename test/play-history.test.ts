@@ -179,6 +179,7 @@ describe('play history protocol', () => {
   const socketFor = (name: string, playHistory: boolean) => {
     users.push(name)
     return {
+      readyState: 1,
       userInfo: { name },
       moduleReadys: { list: false, dislike: false, playHistory },
       feature: { list: false, dislike: false, playHistory: false },

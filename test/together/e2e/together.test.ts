@@ -5,24 +5,18 @@
  *   Production startServer ignores the private startup return value as before.
  * - Reuse existing setRoomManager/RoomManager.clock and test/together/fakes.ts
  *   clock only for room time/grace; managed account lookup remains real.
- * - The stale-resync case tracks real 120s RPC timers with node:test's mock
- *   wrapper so the known orphaned RPC is cleaned up; it does not alter delays.
  * No sockets, authentication, compression, RPC handlers or pushes are mocked.
  *
- * Known-bug assertions run as subtests: only an observed, specific bug signature
- * earns { todo: 'known bug: ...' }. Setup/transport errors stay hard failures;
- * fixed/non-reproducing cases run normally and are reported as "refuted".
  * Run with npm test on Node >=24 in an environment that permits loopback TCP.
  */
 import assert from 'node:assert/strict'
 import { randomBytes } from 'node:crypto'
-import { after, afterEach, before, beforeEach, describe, it, type TestContext } from 'node:test'
+import { after, afterEach, before, beforeEach, describe, it } from 'node:test'
 import { song, unwrap } from '../fakes'
 import { createGate, type TogetherClient, type TogetherPush } from './client'
 import { createFixture, type Fixture } from './fixture'
 
-type Status = 'pass' | 'todo-known-bug-confirmed' | 'refuted'
-const results = new Map<string, Status>()
+const results = new Map<string, 'pass'>()
 const GRACE_MS = 30_000
 const STATE = 'together:onRoomState'
 const MEMBERS = 'together:onMemberChanged'
@@ -31,17 +25,6 @@ const CLOSED = 'together:onRoomClosed'
 const pushesOf = <M extends TogetherPush['method']>(client: TogetherClient, method: M) => (
   client.pushes.filter((push): push is Extract<TogetherPush, { method: M }> => push.method == method)
 )
-
-const knownBug = async(t: TestContext, name: string, reproduced: boolean, description: string, correct: () => void) => {
-  // Never suppress an unrelated failure: the caller must establish the exact
-  // regression signature, after all real handshake/RPC preconditions pass.
-  await t.test('correct behavior', { todo: reproduced ? `known bug: ${description}` : undefined }, () => {
-    correct()
-    if (!reproduced) results.set(name, 'refuted')
-  })
-  if (reproduced) results.set(name, 'todo-known-bug-confirmed')
-  t.diagnostic(`${name}: ${results.get(name) ?? 'failed (unexpected behavior)'}`)
-}
 
 describe('together: two real WebSocket clients', { concurrency: false, timeout: 25_000 }, () => {
   let fixture: Fixture
@@ -232,69 +215,55 @@ describe('together: two real WebSocket clients', { concurrency: false, timeout: 
       })
     }
     t.diagnostic(`wire version pairs: ${JSON.stringify(trials.map(trial => trial.versions))}`)
-    // Known bug: server sendMessage launches independent async gzip jobs; small
-    // frames overtake prior compressed pushes. Client decoding is serialized.
-    const inverted = trials.some(({ versions, expected }) => versions[0] == expected[1] && versions[1] == expected[0])
-    await knownBug(t, '6 async compression ordering', inverted,
-      'per-frame async compression reorders room pushes', () => {
-        for (const trial of trials) {
-          assert.deepEqual(trial.versions, trial.expected, 'room versions must arrive in server update order')
-          assert.ok(trial.queueFrame < trial.stateFrame, 'queue frame must arrive on the wire first')
-        }
-      })
+    for (const trial of trials) {
+      assert.deepEqual(trial.versions, trial.expected, 'room versions must arrive in server update order')
+      assert.ok(trial.queueFrame < trial.stateFrame, 'queue frame must arrive on the wire first')
+    }
+    results.set('6 async compression ordering', 'pass')
   })
 
-  it('7. never rebinds a closed socket when an in-flight feature resync resumes', { timeout: 5000 }, async t => {
-    const timers = new Set<ReturnType<typeof setTimeout>>()
-    const originalTimeout = global.setTimeout
-    // The bug creates a new remote call AFTER msg2call.destroy(). Track and clean
-    // those real RPC deadlines so a confirmed failure cannot leak a 120s timer.
-    t.mock.method(global, 'setTimeout', (callback: (...args: any[]) => void, delay?: number, ...args: any[]) => {
-      const timer = originalTimeout(callback, delay, ...args)
-      if (delay == 120_000) { timers.add(timer); timer.unref() }
-      return timer
-    })
-    t.after(() => { for (const timer of timers) clearTimeout(timer) })
+  it('7. never rebinds a closed socket when an in-flight feature resync resumes', { timeout: 5000 }, async() => {
     const listDataGate = createGate()
     const host = await fixture.connect('host', { listDataGate })
     const member = await fixture.connect('member')
     const room = unwrap(await host.createRoom())
     unwrap(await member.joinRoom(room.code))
-    // list sync waits on the client; close rejects that call. onFeatureChanged
-    // currently swallows the rejection and starts together sync on the dead WS.
+    // Closing rejects the suspended list sync; the continuation must not start
+    // together sync or cancel the closed host's grace timer.
     const resync = host.onFeatureChanged({ list: { skipSnapshot: true }, together: true }).then(() => null, error => error)
     await host.waitFor(() => host.handshake.some(h => h.method == 'list_sync_get_list_data'), 'suspended list resync')
     await host.kill()
     await resync
     await waitOffline(member, room.hostId)
     const resumed = unwrap(await member.getRoom())!
+    assert.equal(resumed.members.find(m => m.memberId == room.hostId)!.online, false)
+    assert.equal(fixture.pendingTimers(), 1)
     fixture.advance(GRACE_MS + 1)
     const after = unwrap(await member.getRoom())!
-    const staleOnline = resumed.members.find(m => m.memberId == room.hostId)?.online === true &&
-      after.hostId == room.hostId && after.members.find(m => m.memberId == room.hostId)?.online === true
-    await knownBug(t, '7 stale socket rebind', staleOnline,
-      'feature resync rebinds a closed socket and cancels its grace timer', () => {
-        assert.equal(after.hostId, member.credentials.clientId, 'the live member must inherit host after grace')
-        assert.equal(after.members.some(m => m.memberId == room.hostId), false, 'closed host must expire')
-      })
+    assert.equal(after.hostId, member.credentials.clientId, 'the live member must inherit host after grace')
+    assert.equal(after.members.some(m => m.memberId == room.hostId), false, 'closed host must expire')
+    results.set('7 stale socket rebind', 'pass')
   })
 
-  it('8. releases host membership when together is disabled on an open socket', { timeout: 5000 }, async t => {
+  it('8. releases host membership when together is disabled on an open socket', { timeout: 5000 }, async() => {
     const { host, member, room } = await pair()
     await host.onFeatureChanged({ together: false })
     await assert.rejects(host.getRoom(), /together is not enabled/)
-    fixture.advance(GRACE_MS + 1)
     const after = unwrap(await member.getRoom())!
-    const stranded = after.hostId == room.hostId && after.members.find(m => m.memberId == room.hostId)?.online === true
-    // Known signature: the feature is off but no leave/offline lifecycle ran.
-    await knownBug(t, '8 feature disable', stranded,
-      'disabling together strands an online host that cannot use room RPCs', () => {
-        assert.equal(after.hostId, member.credentials.clientId)
-        assert.equal(after.members.some(m => m.memberId == room.hostId), false)
-      })
+    assert.equal(after.hostId, member.credentials.clientId)
+    assert.equal(after.members.some(m => m.memberId == room.hostId), false)
+    assert.equal(fixture.pendingTimers(), 0, 'feature disable leaves immediately without a grace timer')
+    const pushCount = host.pushes.length
+    const update = unwrap(await member.hostUpdateState(stateRequest(after)))
+    await host.onFeatureChanged({}) // Round-trip through the disabled socket's send queue.
+    assert.equal(host.pushes.length, pushCount, 'disabled sockets must not receive room broadcasts')
+    await host.onFeatureChanged({ together: true })
+    assert.equal(unwrap(await host.getRoom()), null, 'enabling again must not restore a membership that was left')
+    assert.equal(unwrap(await member.getRoom())!.version, update.version)
+    results.set('8 feature disable', 'pass')
   })
 
-  it('9. restores the same device membership when reconnecting with a credential alias', { timeout: 5000 }, async t => {
+  it('9. restores the same device membership when reconnecting with a credential alias', { timeout: 5000 }, async() => {
     const alias = fixture.seedHostAlias()
     const host = await fixture.connect('host', {}, true, alias)
     const member = await fixture.connect('member')
@@ -308,16 +277,16 @@ describe('together: two real WebSocket clients', { concurrency: false, timeout: 
     unwrap(await reconnected.ping(1)) // The canonical credential authenticated successfully.
     const restored = unwrap(await reconnected.getRoom())
     const peerView = unwrap(await member.getRoom())!
-    // The devices subsystem recognizes both credentials as one installation;
-    // room membership currently indexes raw credentials instead of that device.
-    const lost = restored === null && peerView.hostId == alias.clientId &&
-      peerView.members.find(m => m.memberId == alias.clientId)?.online === false
-    await knownBug(t, '9 credential alias reconnect', lost,
-      'switching valid credentials for the same device loses together membership', () => {
-        assert.ok(restored, 'getRoom must restore the existing device membership')
-        assert.equal(restored.roomId, room.roomId)
-        assert.equal(restored.members.length, 2)
-        assert.equal(restored.members.find(m => m.memberId == restored.hostId)!.online, true)
-      })
+    assert.ok(restored, 'getRoom must restore the existing device membership')
+    assert.equal(restored.roomId, room.roomId)
+    assert.equal(restored.hostId, room.hostId, 'public member IDs must remain stable across credential changes')
+    assert.equal(restored.members.length, 2)
+    assert.equal(restored.members.find(m => m.memberId == restored.hostId)!.online, true)
+    assert.deepEqual(peerView, restored)
+    assert.equal(fixture.pendingTimers(), 0)
+    fixture.advance(GRACE_MS + 1)
+    const update = unwrap(await reconnected.hostUpdateState(stateRequest(restored)))
+    await member.waitFor(() => member.pushes.some(p => p.method == STATE && p.payload.version == update.version), 'state from restored host')
+    results.set('9 credential alias reconnect', 'pass')
   })
 })

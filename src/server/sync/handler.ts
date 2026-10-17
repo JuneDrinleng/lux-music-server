@@ -2,30 +2,53 @@
 // import { getUserSpace } from '@/user'
 import { FeaturesList } from '@/constants'
 import { modules, playHistoryModule, togetherModule } from '@/modules'
+import { getRoomManager } from '@/modules/together/roomManage'
+import { isSocketOpen } from '../socketState'
 
+type FeatureName = keyof LX.Sync.EnabledFeatures
+const featureChanges = new WeakMap<LX.Socket, Partial<Record<FeatureName, object>>>()
 
 const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
   async onFeatureChanged(socket, feature) {
-    // const userSpace = getUserSpace(socket.userInfo.name)
-    const beforeFeature = socket.feature
+    if (!isSocketOpen(socket)) throw new Error('disconnected')
+    const changes = featureChanges.get(socket) ?? {}
+    featureChanges.set(socket, changes)
+    const pending: Array<() => Promise<void>> = []
+    const schedule = (name: FeatureName, enabled: boolean, sync: (socket: LX.Socket) => Promise<void>) => {
+      const change = {}
+      changes[name] = change
+      socket.moduleReadys[name] = false
+      if (!enabled) return
+      pending.push(async() => {
+        if (!isSocketOpen(socket)) throw new Error('disconnected')
+        // A newer feature change supersedes work suspended behind another module's sync.
+        if (changes[name] !== change) return
+        await sync(socket).catch(_ => _)
+        if (!isSocketOpen(socket)) {
+          socket.moduleReadys[name] = false
+          throw new Error('disconnected')
+        }
+        if (!socket.feature[name]) socket.moduleReadys[name] = false
+      })
+    }
 
+    // Apply disables immediately, even when another module's resync is still awaiting its client.
     for (const name of FeaturesList) {
       const newStatus = feature[name]
       if (newStatus == null) continue
-      beforeFeature[name] = feature[name]
-      socket.moduleReadys[name] = false
-      if (feature[name]) await modules[name].sync(socket).catch(_ => _)
+      socket.feature[name] = newStatus
+      schedule(name, !!newStatus, modules[name].sync)
     }
     if (feature.playHistory != null) {
-      beforeFeature.playHistory = !!feature.playHistory
-      socket.moduleReadys.playHistory = false
-      if (feature.playHistory) await playHistoryModule.sync(socket).catch(_ => _)
+      socket.feature.playHistory = !!feature.playHistory
+      schedule('playHistory', !!feature.playHistory, playHistoryModule.sync)
     }
     if (feature.together != null) {
-      beforeFeature.together = !!feature.together
-      socket.moduleReadys.together = false
-      if (feature.together) await togetherModule.sync(socket).catch(_ => _)
+      socket.feature.together = !!feature.together
+      schedule('together', !!feature.together, togetherModule.sync)
+      if (!feature.together) getRoomManager().handleSocketDisabled(socket)
     }
+    for (const run of pending) await run()
   },
 }
 

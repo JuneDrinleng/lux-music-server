@@ -1,3 +1,5 @@
+import { isSocketOpen } from '@/server/socketState'
+
 type TogetherRemote = LX.Sync.ClientSyncTogetherActions
 
 export interface BroadcastTarget {
@@ -8,7 +10,7 @@ export const getTogetherRemote = (socket: LX.Socket) => socket.remote as unknown
 
 /** Fire-and-forget: a slow or dead member must never block the room. */
 export const sendToSocket = (socket: LX.Socket | null, fn: (remote: TogetherRemote) => Promise<unknown>) => {
-  if (!socket) return
+  if (!socket || !isSocketOpen(socket) || !socket.moduleReadys.together || !socket.feature.together) return
   try {
     void fn(getTogetherRemote(socket)).catch(() => {})
   } catch {}

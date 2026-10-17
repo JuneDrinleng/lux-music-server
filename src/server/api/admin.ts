@@ -99,6 +99,10 @@ export const registerAdminApi = async(app: FastifyInstance) => {
         maxSnapshotNum: getNumber(request.body.maxSnapshotNum),
         'list.addMusicLocationType': getAddMusicLocationType(request.body['list.addMusicLocationType']),
       })
+      if (user.status == 'disabled') {
+        disconnectUserSessions(user.username)
+        getRoomManager().evictUser(id)
+      }
       return { user }
     } catch (err: any) {
       return reply.code(404).send({ message: err.message })

@@ -3,13 +3,15 @@ import assert from 'node:assert/strict'
 import { createMsg2call } from 'message2call'
 import { getAccountStore } from '../../src/account/store'
 import { featureVersion } from '../../src/modules'
-import { RoomManager, setRoomManager } from '../../src/modules/together'
+import * as listSyncModule from '../../src/modules/list/sync/sync'
+import { getRoomManager, RoomManager, setRoomManager } from '../../src/modules/together'
 import { TOGETHER_METHODS } from '../../src/modules/together/protocol'
 import handler from '../../src/modules/together/sync/handler'
 import { sync as togetherSync } from '../../src/modules/together/sync/sync'
 import { callObj } from '../../src/server/sync'
 import featureHandler from '../../src/server/sync/handler'
 import { sync } from '../../src/server/sync/sync'
+import { syncLog } from '../../src/utils/log4js'
 import { parseJson, resetTestState } from '../helpers'
 import { createFakeClock, createFakeSocket, unwrap } from './fakes'
 import type { FastifyInstance } from 'fastify'
@@ -137,6 +139,133 @@ describe('together protocol wiring', () => {
     await togetherSync(bob2)
     assert.deepEqual(alice.takePushes('together:onMemberChanged').map(p => p.payload.change.type), ['online'])
     assert.equal(unwrap(await handler['together:getRoom'](bob2))!.roomId, room.roomId)
+  })
+
+  it('does not resume together sync after a socket closes during another feature resync', async t => {
+    const clock = createFakeClock()
+    setRoomManager(new RoomManager({ config: { graceMs: 30_000 }, clock: clock.clock }))
+    const alice = createFakeSocket('c_alice', 'alice')
+    const bob = createFakeSocket('c_bob', 'bob')
+    const room = unwrap(await handler['together:createRoom'](alice))
+    unwrap(await handler['together:joinRoom'](bob, { code: room.code }))
+    await togetherSync(alice)
+    alice.takePushes()
+    let resume!: () => void
+    t.mock.method(listSyncModule, 'sync', async(socket: LX.Socket) => {
+      await new Promise<void>(resolve => { resume = resolve })
+      socket.moduleReadys.list = true
+    })
+
+    const pending = featureHandler.onFeatureChanged(alice, { list: { skipSnapshot: true }, together: true })
+    alice.close()
+    resume()
+    await assert.rejects(pending, /disconnected/)
+    assert.equal(alice.moduleReadys.list, false)
+    assert.equal(alice.moduleReadys.together, false)
+    assert.equal(alice.takePushes('together_sync_finished').length, 0)
+    assert.equal(unwrap(await handler['together:getRoom'](bob))!.members.find(m => m.memberId == room.hostId)!.online, false)
+    clock.advance(30_001)
+    assert.equal(unwrap(await handler['together:getRoom'](bob))!.hostId, 'c_bob')
+    await assert.rejects(togetherSync(alice), /disconnected/)
+  })
+
+  it('releases members and transfers the host when the feature is disabled', async() => {
+    const alice = createFakeSocket('c_alice', 'alice')
+    const bob = createFakeSocket('c_bob', 'bob')
+    const room = unwrap(await handler['together:createRoom'](alice))
+    unwrap(await handler['together:joinRoom'](bob, { code: room.code }))
+    await featureHandler.onFeatureChanged(bob, { together: false })
+    assert.equal(unwrap(getRoomManager().getRoom(bob)), null)
+    assert.deepEqual(unwrap(await handler['together:getRoom'](alice))!.members.map(m => m.memberId), ['c_alice'])
+
+    await featureHandler.onFeatureChanged(bob, { together: true })
+    assert.equal(unwrap(await handler['together:getRoom'](bob)), null)
+    unwrap(await handler['together:joinRoom'](bob, { code: room.code }))
+    alice.takePushes()
+    await featureHandler.onFeatureChanged(alice, { together: false })
+    assert.equal(unwrap(getRoomManager().getRoom(alice)), null)
+    assert.equal(unwrap(await handler['together:getRoom'](bob))!.hostId, 'c_bob')
+    assert.equal(alice.takePushes().length, 0)
+  })
+
+  it('does not broadcast room updates to a socket without together readiness', async() => {
+    const alice = createFakeSocket('c_alice', 'alice')
+    const bob = createFakeSocket('c_bob', 'bob')
+    const room = unwrap(await handler['together:createRoom'](alice))
+    unwrap(await handler['together:joinRoom'](bob, { code: room.code }))
+    bob.takePushes()
+    bob.moduleReadys.together = false
+    unwrap(await handler['together:closeRoom'](alice, { roomId: room.roomId }))
+    assert.equal(bob.takePushes().length, 0)
+  })
+
+  it('a newer disable supersedes a together resync suspended behind another module', async t => {
+    const alice = createFakeSocket('c_alice', 'alice')
+    const bob = createFakeSocket('c_bob', 'bob')
+    const room = unwrap(await handler['together:createRoom'](alice))
+    unwrap(await handler['together:joinRoom'](bob, { code: room.code }))
+    let resume!: () => void
+    t.mock.method(listSyncModule, 'sync', async() => new Promise<void>(resolve => { resume = resolve }))
+    const pending = featureHandler.onFeatureChanged(alice, { list: { skipSnapshot: true }, together: true })
+    await featureHandler.onFeatureChanged(alice, { together: false })
+    resume()
+    await pending
+    assert.equal(alice.feature.together, false)
+    assert.equal(alice.moduleReadys.together, false)
+    assert.equal(alice.takePushes('together_sync_finished').length, 0)
+    assert.equal(unwrap(await handler['together:getRoom'](bob))!.hostId, 'c_bob')
+
+    const olderEnable = featureHandler.onFeatureChanged(alice, { list: { skipSnapshot: true }, together: true })
+    await featureHandler.onFeatureChanged(alice, { together: false })
+    await featureHandler.onFeatureChanged(alice, { together: true })
+    resume()
+    await olderEnable
+    assert.equal(alice.moduleReadys.together, true)
+    assert.equal(alice.takePushes('together_sync_finished').length, 1, 'only the latest enable may sync')
+  })
+
+  for (const failure of ['rejection', 'timeout']) {
+    it(`logs together_sync_finished ${failure} and releases the failed module's membership`, async t => {
+      const alice = createFakeSocket('c_alice', 'alice')
+      const bob = createFakeSocket('c_bob', 'bob')
+      const room = unwrap(await handler['together:createRoom'](alice))
+      unwrap(await handler['together:joinRoom'](bob, { code: room.code }))
+      const warnings = t.mock.method(syncLog, 'warn', () => {})
+      if (failure == 'timeout') {
+        const rpc = createMsg2call({ funcsObj: {}, timeout: 10, sendMessage() {} })
+        alice.remote = rpc.remote as LX.Socket['remote']
+        t.after(() => rpc.destroy())
+      } else {
+        alice.remote = { async together_sync_finished() { throw new Error('ack rejected') } } as unknown as LX.Socket['remote']
+      }
+      // The feature-change path catches module errors; cleanup must happen inside together sync.
+      await featureHandler.onFeatureChanged(alice, { together: true })
+      assert.equal(warnings.mock.callCount(), 1)
+      assert.match(String(warnings.mock.calls[0].arguments[0]), /together sync acknowledgement failed/)
+      assert.equal(alice.moduleReadys.together, false)
+      await assert.rejects(handler['together:ping'](alice, { t0: 1 }), /together is not enabled/)
+      assert.equal(unwrap(getRoomManager().getRoom(alice)), null)
+      assert.equal(unwrap(await handler['together:getRoom'](bob))!.hostId, 'c_bob')
+    })
+  }
+
+  it('an older failed acknowledgement cannot disable a newer successful together sync', async t => {
+    const alice = createFakeSocket('c_alice', 'alice')
+    const room = unwrap(await handler['together:createRoom'](alice))
+    let reject!: (error: Error) => void
+    let calls = 0
+    alice.remote = {
+      async together_sync_finished() {
+        if (++calls == 1) await new Promise<void>((_resolve, fail) => { reject = fail })
+      },
+    } as unknown as LX.Socket['remote']
+    t.mock.method(syncLog, 'warn', () => {})
+    const pending = featureHandler.onFeatureChanged(alice, { together: true })
+    await featureHandler.onFeatureChanged(alice, { together: true })
+    reject(new Error('old acknowledgement failed'))
+    await pending
+    assert.equal(alice.moduleReadys.together, true)
+    assert.equal(unwrap(await handler['together:getRoom'](alice))!.roomId, room.roomId)
   })
 
   it('routes calls and pushes through message2call', async() => {
