@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { recordTokenActivity } from '@/account/tokenActivity'
 import type { PatScope } from '@/account/pats'
 import { authenticatePat } from './api/pats'
+import { commandDevice, listDevices } from './deviceCommands'
 import { changePlaylistSongs, createPlaylist, getPlaylist, listPlaylists, readHistory } from './api/data'
 
 const IDLE_MS = 30 * 60 * 1000
@@ -26,13 +27,21 @@ const createMcpServer = (version: string, auth: ReturnType<typeof authenticatePa
     server.registerTool<z.ZodRawShape, z.ZodObject<T>>(name, { description, inputSchema: z.object(inputSchema) }, async(args) => {
       try {
         if (!auth.token.scopes.includes(scope)) throw new Error(`Missing required scope: ${scope}`)
-        return { content: [{ type: 'text' as const, text: JSON.stringify(await run(args as z.infer<z.ZodObject<T>>)) }] }
+        const result = await run(args as z.infer<z.ZodObject<T>>)
+        return { ...(result && typeof result == 'object' && 'ok' in result && result.ok === false ? { isError: true } : {}), content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
       } catch (error) {
-        return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: error instanceof Error ? error.message : 'Tool failed' }) }] }
+        return { isError: true, content: [{ type: 'text' as const, text: JSON.stringify({ error: error instanceof Error ? error.message : 'Tool failed', ...(error && typeof error == 'object' && 'code' in error ? { code: error.code } : {}) }) }] }
       }
     })
   }
   const username = auth.user.username
+  tool('list_devices', '在线设备 / Connected devices.', 'player:control', {}, async() => listDevices(username))
+  tool('play_on_device', '点歌到手机 / Play on a device. ' + songHelp, 'player:control',
+    { song, mode: z.enum(['now', 'next']).optional(), deviceId: z.string().min(1).optional() },
+    args => commandDevice(username, auth.token.id, { type: 'play_song', payload: { song: args.song, mode: args.mode ?? 'now' } }, args.deviceId))
+  tool('control_playback', '控制播放 / Control playback.', 'player:control',
+    { action: z.enum(['pause', 'resume', 'next', 'previous']), deviceId: z.string().min(1).optional() },
+    args => commandDevice(username, auth.token.id, { type: 'playback', payload: { action: args.action } }, args.deviceId))
   tool('get_listening_history', '收听历史 / Listening history; from/to: ISO timestamp or milliseconds string.', 'history:read',
     { ...range, cursor: z.string().optional() }, args => readHistory(username, query(args)))
   tool('get_top_tracks', '最常播放 / Top tracks; from/to: ISO timestamp or milliseconds string.', 'history:read', range,

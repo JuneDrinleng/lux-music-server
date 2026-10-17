@@ -46,7 +46,7 @@ describe('Streamable HTTP MCP', { concurrency: false, timeout: 30000 }, () => {
     assert.ok(transport.sessionId)
     assert.deepEqual(client.getServerVersion(), { name: 'lux-music', version: require('../../../package.json').version })
     const tools = (await client.listTools()).tools
-    assert.deepEqual(tools.map(t => t.name).sort(), ['add_songs_to_playlist', 'create_playlist', 'get_listening_history', 'get_playlist', 'get_top_tracks', 'list_playlists'])
+    assert.deepEqual(tools.map(t => t.name).sort(), ['add_songs_to_playlist', 'control_playback', 'create_playlist', 'get_listening_history', 'get_playlist', 'get_top_tracks', 'list_devices', 'list_playlists', 'play_on_device'])
     assert.equal(tools.find(t => t.name == 'create_playlist')!.inputSchema.type, 'object')
     assert.equal((await result(client, 'list_playlists')).items[0].id, 'default')
     const created = await result(client, 'create_playlist', { name: 'MCP mix', songs: [song('one')] })

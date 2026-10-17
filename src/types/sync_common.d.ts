@@ -29,6 +29,7 @@ declare namespace LX {
       getEnabledFeatures: (serverType: ServerType, supportedFeatures: SupportedFeatures) => EnabledFeatures
       /** Called after the server finished `togetherModule.sync` for this socket. */
       together_sync_finished: () => void
+      'device:command': (command: import('../server/deviceCommands').DeviceCommand) => import('../server/deviceCommands').DeviceResult
       finished: () => void
     }>
     type ClientSyncHandlerActions<Socket> = WarpSyncHandlerActions<Socket, ClientSyncActions>

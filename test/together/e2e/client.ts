@@ -30,6 +30,7 @@ export const createGate = (): Gate => {
 }
 
 export interface ClientOptions {
+  command?: (command: import('../../../src/server/deviceCommands').DeviceCommand) => Promise<import('../../../src/server/deviceCommands').DeviceResult>
   list?: boolean
   chat?: boolean
   reaction?: boolean
@@ -157,11 +158,12 @@ export class TogetherClient {
     this.rpc = createMsg2call<TogetherActions>({
       timeout: TIMEOUT_MS,
       funcsObj: {
+        ...(options.command ? { 'device:command': options.command } : {}),
         getEnabledFeatures: async(serverType: string, supportedFeatures: LX.Sync.SupportedFeatures) => {
           recordHandshake('getEnabledFeatures', [serverType, supportedFeatures])
           await options.featuresGate?.wait
           // Feature version 1 is truthy on the legacy EnabledFeatures wire format.
-          return { list: options.list ?? false, dislike: false, playHistory: false, together: 1, ...(options.reaction ? { 'together.reaction': true } : {}), ...(options.request ? { 'together.request': true } : {}), ...(options.chat ? { 'together.chat': true } : {}) }
+          return { ...(options.command ? { 'device.command': 1 } : {}), list: options.list ?? false, dislike: false, playHistory: false, together: 1, ...(options.reaction ? { 'together.reaction': true } : {}), ...(options.request ? { 'together.request': true } : {}), ...(options.chat ? { 'together.chat': true } : {}) }
         },
         together_sync_finished: async() => {
           recordHandshake('together_sync_finished')

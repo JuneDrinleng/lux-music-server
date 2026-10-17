@@ -5,6 +5,8 @@ declare global {
     interface Socket extends WS.WebSocket {
       isAlive?: boolean
       isReady: boolean
+      connectedAt: number
+      lastActiveAt: number
       keyInfo: LX.Sync.KeyInfo
       userInfo: LX.UserConfig
       feature: LX.Sync.EnabledFeatures

@@ -4,6 +4,7 @@ import { getUserSpace, getUserConfig } from '@/user'
 import { sanitizeMusicInfo } from '@/modules/together/validate'
 import { applyListAction } from '@/modules/list/sync/handler'
 import { broadcastListClients } from '../server'
+import { commandDevice, listDevices } from '../deviceCommands'
 import { authenticatePat } from './pats'
 import { isRecord } from './utils'
 
@@ -110,6 +111,11 @@ export const changePlaylistSongs = async(username: string, id: string, body: unk
 }
 
 export const registerDataApi = async(app: FastifyInstance) => {
+  app.get('/api/v1/devices', async request => listDevices(authenticatePat(request, ['player:control']).user.username))
+  for (const url of ['/api/v1/devices/commands', '/api/v1/devices/:deviceId/commands']) app.post(url, async request => {
+    const { user, token } = authenticatePat(request, ['player:control'])
+    return commandDevice(user.username, token.id, request.body, (request.params as { deviceId?: string }).deviceId)
+  })
   for (const top of [false, true]) app.get(top ? '/api/v1/stats/top-tracks' : '/api/v1/history', async request =>
     readHistory(authenticatePat(request, ['history:read']).user.username, request.query as Record<string, unknown>, top))
   app.get('/api/v1/playlists', async request => listPlaylists(authenticatePat(request, ['playlist:read']).user.username))

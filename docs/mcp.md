@@ -61,7 +61,7 @@ bearer_token_env_var = "LUX_MCP_TOKEN"
 
 ## 工具与权限
 
-结果为 JSON 文本，失败含 `isError`。每次工具调用记录到令牌活动；不记录参数／歌曲内容。
+结果为 JSON 文本，失败含 `isError`。每次工具调用记录到令牌活动；命令仅记录类型、模式和歌名摘要，不记录完整歌曲 JSON。
 
 | 工具 | 参数 | scope |
 | --- | --- | --- |
@@ -71,6 +71,9 @@ bearer_token_env_var = "LUX_MCP_TOKEN"
 | `get_playlist` | `playlistId`, `offset?`, `limit?` | `playlist:read` |
 | `create_playlist` | `name`, `songs?` | `playlist:write` |
 | `add_songs_to_playlist` | `playlistId`, `songs` | `playlist:write` |
+| `list_devices` | `{}` | `player:control` |
+| `play_on_device` | `song`, `mode?` (`now` 默认 / `next`), `deviceId?` | `player:control` |
+| `control_playback` | `action` (`pause/resume/next/previous`), `deviceId?` | `player:control` |
 
 `from/to` 为 ISO 时间或毫秒时间戳字符串；`limit/offset` 为整数。默认／最大 limit：历史 50/200、排行 20/100、歌单歌曲 50/200。历史 cursor 为上次返回的 `nextCursor`。歌单名去除首尾空格后为 1–60 字符。
 
@@ -85,3 +88,16 @@ bearer_token_env_var = "LUX_MCP_TOKEN"
 PassNAT HTTPS 隧道指向同一 HTTP 服务端口。SSE 必须及时逐段转发；服务发送 `X-Accel-Buffering: no`、`Cache-Control: no-cache`。Nginx 配置 `proxy_buffering off`、`proxy_http_version 1.1`、足够长的 `proxy_read_timeout`（至少 300 秒），并保留 Authorization、Mcp-Session-Id 和 MCP-Protocol-Version 请求头。多层代理／PassNAT 每一层都需检查缓冲与空闲超时。使用单实例；多实例没有共享会话。
 
 外网验证应使用 SDK 客户端完成初始化、列工具与调用，并确认 GET SSE 保持连接、响应没有积攒后批量到达；仅 `/hello` 成功不能证明 SSE 正常。部署步骤见 [fnOS 指南](deploy-fnos.md)。
+
+## 点歌到手机：HTTP 与 App 协议
+
+`GET /api/v1/devices`（`player:control`）返回 `{ items: [{ deviceId, name, platform?, connectedAt, supportsCommands }] }`，仅列出本人的在线 WS 设备。`deviceId` 是服务端规范化的稳定 clientId（可能含 `+`、`/`、`=`，放进 URL 路径时要 `encodeURIComponent`），时间为毫秒时间戳。
+`POST /api/v1/devices/:deviceId/commands` 接受 `{ type, payload }`：
+`play_song` 的 payload 为 `{ song, mode: 'now' | 'next' }`（song 沿用上述在线歌曲校验）；`playback` 为 `{ action: 'pause' | 'resume' | 'next' | 'previous' }`。
+便利路由 `POST /api/v1/devices/commands` 和省略 MCP `deviceId` 时，选择本人最近收到 WS RPC 消息的、已完成握手且支持命令的在线设备；活动时间相同时按连接时间选择。
+
+App 在 `getEnabledFeatures` 返回 `device.command: 1`（或 `true`）以启用服务端广告的版本 1 能力，可通过 `onFeatureChanged` 禁用。App 必须实现现有远程 RPC 方法 `device:command`，参数为 `{ id, type, payload, issuedAt, expiresAt }`。
+命令有效期 30 秒；App 应拒绝过期命令，并按唯一 `id` 避免重复执行。RPC 返回 ACK `{ ok: true, state? }` 或 `{ ok: false, code, message }`，同一设备的并发调用各自返回 ACK。服务端最多等待 8 秒，超时后不会重试；迟到 ACK 不改变已返回结果。
+旧客户端不会收到命令。无离线队列；本人已知但断线的设备（或无可用默认目标）立即返回 HTTP 503 `DEVICE_OFFLINE`，未知／其他用户设备 404，不支持能力 409 `DEVICE_UNSUPPORTED`，未收到 ACK 504 `DEVICE_TIMEOUT`，非法 ACK 502 `DEVICE_INVALID_ACK`。
+设备 ACK 原样作为 HTTP 200 结果（包括 `ok: false`）；MCP 中设备拒绝与服务端错误均为 `isError`。HTTP 服务端错误含 `code` 与 `message`，MCP 服务端错误含 `code` 与 `error`。
+HTTP 与 MCP 共用每枚令牌每分钟最多 10 次有效命令尝试的限额（包括离线、未知目标和超时；额外于现有 HTTP 限额），超限返回 429 `RATE_LIMITED`。命令审计摘要仅包含类型、模式／动作和歌名。
