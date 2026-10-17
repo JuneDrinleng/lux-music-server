@@ -10,6 +10,7 @@ errors are unchanged. Rate limiting now uses HTTP 429 instead of 403.
 | `FORBIDDEN` | 403 | Authenticated user lacks admin permission, or bootstrap access is denied |
 | `INVALID_CREDENTIALS` | 401 | Incorrect login username/password |
 | `INVALID_CURRENT_PASSWORD` | 403 | Incorrect old password during password change |
+| `SESSION_REQUIRED` | 400 | `POST /api/me/password` with `revokeOtherDevices: false` requires a token with a session id; sign in again |
 | `RATE_LIMITED` | 429 | Existing IP/account auth failure limit reached |
 | `INVALID_REQUEST` | 400 | Invalid request body or rejected input |
 | `INVALID_DISPLAY_NAME` | 400 | Profile displayName is not a string or exceeds 100 characters |
@@ -48,3 +49,9 @@ Empty strings clear text fields; empty gender resets to `unknown`. Omitted field
 stay unchanged. Avatar strings (including mobile data URLs) retain their existing
 format compatibility; oversized avatars are rejected instead of truncated.
 The global request body limit still applies before profile validation.
+
+For `POST /api/me/password`, a legacy token without `sid` combined with
+`revokeOtherDevices: false` returns `SESSION_REQUIRED` with message
+`sign in again to keep other devices signed in`, without changing the password
+or sessions. Sign in again and use the returned `accessToken`. Omitting the flag
+or passing `true` works with legacy tokens and returns a new renewable session.

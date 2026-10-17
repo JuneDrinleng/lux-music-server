@@ -1,13 +1,13 @@
 import type { FastifyInstance, FastifyReply } from 'fastify'
 import { getAccountStore } from '@/account/store'
 import { verifyPassword } from '@/account/password'
-import { createToken } from '@/account/token'
 import { getUserSpace } from '@/user'
 import { removeDevice } from '../server'
 import { getRequiredAuthUser, requireAuth, type AuthRequest } from './authGuard'
 import { getString, isRecord, toPublicDevice } from './utils'
 import { clearAuthFailures, getRequestIP, isAuthRateLimited, recordAuthFailure } from './rateLimit'
 import { sendError } from './errors'
+import { loginCredentials } from './auth'
 
 const toProfile = (user: ReturnType<ReturnType<typeof getAccountStore>['findManagedUserById']>) => ({
   username: user?.username ?? '',
@@ -154,18 +154,20 @@ export const registerMeApi = async(app: FastifyInstance) => {
       return sendError(reply, 403, 'INVALID_CURRENT_PASSWORD', 'Invalid current password')
     }
 
+    const revokeOtherDevices = request.body.revokeOtherDevices !== false
+    if (!revokeOtherDevices && !request.authSessionId) {
+      return sendError(reply, 400, 'SESSION_REQUIRED', 'sign in again to keep other devices signed in')
+    }
     const store = getAccountStore()
-    const updatedUser = await store.changePassword(user.id, password)
+    const currentSession = store.sessions.listForUser(user.id).find(session => session.id == request.authSessionId)
+    await store.changePassword(user.id, password, { revokeSessions: revokeOtherDevices })
+    if (request.authSessionId) store.sessions.revoke(request.authSessionId, user.id)
     clearAuthFailures(ip, user.username)
-    // Password changes always revoke all sessions and sync keys; revokeOtherDevices is accepted for compatibility.
-    const token = createToken({
-      userId: user.id,
-      username: user.username,
-      role: user.role,
-      sessionVersion: user.sessionVersion,
-      secret: store.getTokenSecret(),
-    })
-    return { ok: true, token, user: updatedUser }
+    return { ok: true, ...loginCredentials(user, {
+      deviceId: currentSession?.deviceId,
+      deviceName: currentSession?.deviceName,
+      platform: currentSession?.platform,
+    }) }
   })
 
   app.get('/api/me/sync-code', { preHandler: requireAuth }, async(request: AuthRequest, reply) => {

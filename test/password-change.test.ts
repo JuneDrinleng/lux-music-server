@@ -9,11 +9,12 @@ import { parseJson, resetTestState } from './helpers'
 describe('self-service password change', () => {
   let app: FastifyInstance
   let token: string
+  let credentials: Record<string, any>
 
   const login = (password = 'old-pass') => app.inject({
     method: 'POST',
     url: '/api/auth/login',
-    payload: { username: 'alice', password },
+    payload: { username: 'alice', password, deviceId: 'phone', deviceName: 'Phone', platform: 'ios' },
   })
   const changePassword = (payload: Record<string, unknown>) => app.inject({
     method: 'POST',
@@ -32,7 +33,8 @@ describe('self-service password change', () => {
     await getAccountStore().createUser({ username: 'alice', password: 'old-pass' })
     const result = await login()
     assert.equal(result.statusCode, 200)
-    token = parseJson(result.body).token
+    credentials = parseJson(result.body)
+    token = credentials.accessToken
   })
 
   afterEach(async() => {
@@ -65,60 +67,93 @@ describe('self-service password change', () => {
     const result = await changePassword({ oldPassword: 'wrong', password: 'new-pass' })
     assert.equal(result.statusCode, 403)
     assert.equal(parseJson(result.body).message, 'Invalid current password')
+    assert.equal(parseJson(result.body).code, 'INVALID_CURRENT_PASSWORD')
     assert.equal((await me(token)).statusCode, 200)
     assert.equal((await login()).statusCode, 200)
     assert.equal((await login('new-pass')).statusCode, 401)
   })
 
+  const refresh = (refreshToken: string) => app.inject({
+    method: 'POST', url: '/api/auth/refresh', payload: { refreshToken },
+  })
+  const assertRenewable = async(body: Record<string, any>) => {
+    assert.equal(typeof body.token, 'string')
+    assert.equal(typeof body.sessionId, 'string')
+    assert.ok(body.accessTokenExpiresAt > Date.now())
+    assert.equal((await me(body.token)).statusCode, 200)
+    assert.equal((await me(body.accessToken)).statusCode, 200)
+    const rotated = await refresh(body.refreshToken)
+    assert.equal(rotated.statusCode, 200, rotated.body)
+    const next = parseJson(rotated.body)
+    assert.equal(next.sessionId, body.sessionId)
+    assert.equal((await me(next.accessToken)).statusCode, 200)
+    assert.equal((await refresh(next.refreshToken)).statusCode, 200)
+  }
+
   for (const revokeOtherDevices of [undefined, false, true]) {
-    it(`rotates all bearer sessions and revokes sync credentials (revokeOtherDevices=${String(revokeOtherDevices)})`, async() => {
+    it(`replaces the current session and honors revokeOtherDevices=${String(revokeOtherDevices)}`, async() => {
       const store = getAccountStore()
       const user = store.findManagedUserByUsername('alice')!
       const sessionVersion = user.sessionVersion
       const syncCode = store.getSyncCode(user.id)
-      const otherToken = createToken({
-        userId: user.id,
-        username: user.username,
-        role: user.role,
-        sessionVersion,
-        secret: store.getTokenSecret(),
-        ttlMs: 60_000,
-      })
-      const device = await app.inject({
-        method: 'POST',
-        url: '/api/sync/key',
-        headers: { authorization: `Bearer ${token}` },
-        payload: { deviceId: 'password-change-test', deviceName: 'Phone' },
-      })
-      assert.equal(device.statusCode, 200)
-      const devicesBefore = await app.inject({
-        method: 'GET', url: '/api/me/devices', headers: { authorization: `Bearer ${token}` },
-      })
-
+      const other = parseJson((await app.inject({
+        method: 'POST', url: '/api/auth/login',
+        payload: { username: 'alice', password: 'old-pass', deviceId: 'tablet' },
+      })).body)
       const result = await changePassword({ oldPassword: 'old-pass', password: 'new-pass', revokeOtherDevices })
       assert.equal(result.statusCode, 200, result.body)
       const body = parseJson(result.body)
       assert.equal(body.ok, true)
-      assert.equal(typeof body.token, 'string')
-      assert.notEqual(body.token, token)
+      assert.notEqual(body.sessionId, credentials.sessionId)
       assert.equal(body.user.id, user.id)
       assert.equal(body.user.loginPasswordHash, undefined)
       assert.equal(body.user.lxSyncCode, undefined)
-      assert.equal(user.sessionVersion, sessionVersion + 1)
+      assert.equal(user.sessionVersion, sessionVersion + (revokeOtherDevices === false ? 0 : 1))
       assert.equal((await me(token)).statusCode, 401)
-      assert.equal((await me(otherToken)).statusCode, 401)
-      const current = await me(body.token)
-      assert.equal(current.statusCode, 200)
-      assert.deepEqual(parseJson(current.body).user, body.user)
+      assert.equal((await refresh(credentials.refreshToken)).statusCode, 401)
+      const expected = revokeOtherDevices === false ? 200 : 401
+      assert.equal((await me(other.accessToken)).statusCode, expected)
+      const otherRefresh = await refresh(other.refreshToken)
+      assert.equal(otherRefresh.statusCode, expected)
+      if (expected == 200) assert.equal((await me(parseJson(otherRefresh.body).accessToken)).statusCode, 200)
+      await assertRenewable(body)
+      const session = store.sessions.listForUser(user.id).find(session => session.id == body.sessionId)!
+      assert.equal(session.deviceId, 'phone')
+      assert.equal(session.deviceName, 'Phone')
+      assert.equal(session.platform, 'ios')
       assert.equal(store.getSyncCode(user.id), syncCode)
-      const devicesAfter = await app.inject({
-        method: 'GET', url: '/api/me/devices', headers: { authorization: `Bearer ${body.token}` },
-      })
-      assert.equal(devicesAfter.statusCode, 200)
-      assert.equal(parseJson(devicesBefore.body).devices.length, 1)
-      assert.deepEqual(parseJson(devicesAfter.body), { devices: [] })
       assert.equal((await login('new-pass')).statusCode, 200)
       assert.equal((await login()).statusCode, 401)
+    })
+  }
+
+  it('rejects a legacy token with false without changing the password or sessions', async() => {
+    token = credentials.token
+    const store = getAccountStore()
+    const before = JSON.stringify(store.findManagedUserByUsername('alice'))
+    const sessions = JSON.stringify(store.sessions.listForUser(credentials.user.id))
+    const result = await changePassword({ oldPassword: 'old-pass', password: 'new-pass', revokeOtherDevices: false })
+    assert.equal(result.statusCode, 400)
+    assert.deepEqual(parseJson(result.body), {
+      code: 'SESSION_REQUIRED', message: 'sign in again to keep other devices signed in',
+    })
+    assert.equal(JSON.stringify(store.findManagedUserByUsername('alice')), before)
+    assert.equal(JSON.stringify(store.sessions.listForUser(credentials.user.id)), sessions)
+    assert.equal((await me(credentials.accessToken)).statusCode, 200)
+    assert.equal((await refresh(credentials.refreshToken)).statusCode, 200)
+    assert.equal((await login('new-pass')).statusCode, 401)
+    assert.equal((await login()).statusCode, 200)
+  })
+
+  for (const revokeOtherDevices of [undefined, true]) {
+    it(`replaces legacy credentials with a renewable session (revokeOtherDevices=${String(revokeOtherDevices)})`, async() => {
+      token = credentials.token
+      const result = await changePassword({ oldPassword: 'old-pass', password: 'new-pass', revokeOtherDevices })
+      assert.equal(result.statusCode, 200, result.body)
+      assert.equal((await me(token)).statusCode, 401)
+      assert.equal((await me(credentials.accessToken)).statusCode, 401)
+      assert.equal((await refresh(credentials.refreshToken)).statusCode, 401)
+      await assertRenewable(parseJson(result.body))
     })
   }
 

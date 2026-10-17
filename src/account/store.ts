@@ -283,15 +283,17 @@ export class AccountStore {
     return user
   }
 
-  async changePassword(userId: string, password: string) {
+  async changePassword(userId: string, password: string, { revokeSessions = true } = {}) {
     const user = this.findManagedUserById(userId)
     if (!user) throw new Error('User not found')
     user.loginPasswordHash = await hashPassword(password)
-    this.sessions.revokeUser(userId)
-    user.sessionVersion += 1
+    if (revokeSessions) {
+      this.sessions.revokeUser(userId)
+      user.sessionVersion += 1
+    }
     user.updatedAt = now()
     this.saveSync()
-    this.syncKeyRevocationListener?.(user.username, 'all')
+    if (revokeSessions) this.syncKeyRevocationListener?.(user.username, 'all')
     return sanitizeUser(user)
   }
 
