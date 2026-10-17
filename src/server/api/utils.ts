@@ -1,3 +1,13 @@
+// Keep HTTP device listings independent of stored sync credentials and aliases.
+export const toPublicDevice = (device: LX.Sync.KeyInfo) => ({
+  clientId: device.clientId,
+  deviceName: device.deviceName,
+  isMobile: device.isMobile,
+  lastConnectDate: device.lastConnectDate,
+  lastSeen: device.lastSeen,
+  deviceId: device.deviceId,
+})
+
 export const isRecord = (value: unknown): value is Record<string, unknown> => typeof value == 'object' && value != null
 
 export const getString = (value: unknown) => typeof value == 'string' ? value.trim() : ''
