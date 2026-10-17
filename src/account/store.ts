@@ -3,6 +3,7 @@ import path from 'node:path'
 import { randomBytes, createHash } from 'node:crypto'
 import { checkAndCreateDirSync } from '@/utils'
 import { filterFileName, toMD5 } from '@/utils'
+import { atomicWriteFileSync } from '@/utils/atomicWrite'
 import { createSecret, hashPassword, hashPasswordSync, verifyPassword } from './password'
 import type { InviteCode, LuxAccountStoreData, LuxManagedUser, LuxUserRole, LuxUserView, PublicUserInfo } from './types'
 
@@ -19,6 +20,19 @@ const createEmptyStore = (): LuxAccountStoreData => ({
   invites: [],
   suppressedConfigUsernames: [],
 })
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  value !== null && typeof value == 'object' && !Array.isArray(value)
+// Reject only structurally broken data; older valid files may lack newer optional fields.
+const isValidStore = (data: unknown): data is LuxAccountStoreData =>
+  isRecord(data) && data.version === 1 &&
+  (data.tokenSecret === undefined || typeof data.tokenSecret == 'string') &&
+  (data.users === undefined || (Array.isArray(data.users) && data.users.every(user =>
+    isRecord(user) && typeof user.id == 'string' && typeof user.username == 'string'))) &&
+  (data.invites === undefined || (Array.isArray(data.invites) && data.invites.every(invite =>
+    isRecord(invite) && typeof invite.id == 'string'))) &&
+  (data.suppressedConfigUsernames === undefined || (Array.isArray(data.suppressedConfigUsernames) &&
+    data.suppressedConfigUsernames.every(name => typeof name == 'string')))
 
 const sanitizeUser = (user: LuxManagedUser): PublicUserInfo => ({
   id: user.id,
@@ -48,18 +62,38 @@ export class AccountStore {
   }
 
   private load() {
-    if (!fs.existsSync(this.filePath)) return createEmptyStore()
+    // lstat distinguishes a missing file from an unreadable file or dangling symlink.
     try {
-      const data = JSON.parse(fs.readFileSync(this.filePath).toString('utf-8')) as LuxAccountStoreData
+      fs.lstatSync(this.filePath)
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code == 'ENOENT') return createEmptyStore()
+      return this.refuseCorruptStore(err)
+    }
+    try {
+      const data: unknown = JSON.parse(fs.readFileSync(this.filePath, 'utf-8'))
+      if (!isValidStore(data)) throw new Error('Invalid accounts store shape')
       if (!data.tokenSecret) data.tokenSecret = process.env.LUX_TOKEN_SECRET || createSecret()
       data.users ??= []
       data.invites ??= []
       data.suppressedConfigUsernames ??= []
       return data
     } catch (err) {
-      console.error('Read accounts store error:', err)
-      return createEmptyStore()
+      return this.refuseCorruptStore(err)
     }
+  }
+
+  private refuseCorruptStore(cause: unknown): never {
+    const backupPath = `${this.filePath}.corrupt-${new Date().toISOString().replace(/:/g, '-')}-${randomBytes(4).toString('hex')}`
+    let backupMessage: string
+    try {
+      fs.copyFileSync(this.filePath, backupPath, fs.constants.COPYFILE_EXCL)
+      backupMessage = `Backup saved to ${backupPath}.`
+    } catch (err) {
+      backupMessage = `Could not create backup at ${backupPath}: ${String(err)}.`
+    }
+    const message = `Accounts file ${this.filePath} is corrupt or unreadable. ${backupMessage} Refusing to start; original file was not changed. Restore a known-good backup or move the file away to start fresh.`
+    console.error(message, cause)
+    throw new Error(message)
   }
 
   setBaselineConfigUsers(users: LX.UserConfig[]) {
@@ -86,7 +120,7 @@ export class AccountStore {
   }
 
   private saveSync() {
-    fs.writeFileSync(this.filePath, JSON.stringify(this.data, null, 2), 'utf-8')
+    atomicWriteFileSync(this.filePath, JSON.stringify(this.data, null, 2))
     this.refreshGlobalUsers()
   }
 
