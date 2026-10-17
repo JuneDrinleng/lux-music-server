@@ -71,7 +71,7 @@ describe('self-service password change', () => {
   })
 
   for (const revokeOtherDevices of [undefined, false, true]) {
-    it(`rotates all bearer sessions and preserves sync credentials (revokeOtherDevices=${String(revokeOtherDevices)})`, async() => {
+    it(`rotates all bearer sessions and revokes sync credentials (revokeOtherDevices=${String(revokeOtherDevices)})`, async() => {
       const store = getAccountStore()
       const user = store.findManagedUserByUsername('alice')!
       const sessionVersion = user.sessionVersion
@@ -115,7 +115,8 @@ describe('self-service password change', () => {
         method: 'GET', url: '/api/me/devices', headers: { authorization: `Bearer ${body.token}` },
       })
       assert.equal(devicesAfter.statusCode, 200)
-      assert.deepEqual(parseJson(devicesAfter.body), parseJson(devicesBefore.body))
+      assert.equal(parseJson(devicesBefore.body).devices.length, 1)
+      assert.deepEqual(parseJson(devicesAfter.body), { devices: [] })
       assert.equal((await login('new-pass')).statusCode, 200)
       assert.equal((await login()).statusCode, 401)
     })

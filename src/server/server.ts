@@ -1,7 +1,8 @@
 import { type IncomingMessage } from 'node:http'
 import { WebSocketServer } from 'ws'
 import { registerLocalSyncEvent, unregisterLocalSyncEvent, callObj, sync } from './sync'
-import { authConnect } from './auth'
+import { authConnect, isSyncKeyActive } from './auth'
+import type { AccountStore } from '@/account/store'
 import { getAddress, sendStatus, decryptMsg, encryptMsg } from '@/utils/tools'
 import { accessLog, startupLog, syncLog } from '@/utils/log4js'
 import { SYNC_CLOSE_CODE, SYNC_CODE } from '@/constants'
@@ -63,7 +64,7 @@ const handleConnection = async(socket: LX.Socket, request: IncomingMessage) => {
   }
   const userSpace = getUserSpace(userName)
   const keyInfo = userSpace.dataManage.getClientKeyInfo(clientId)
-  if (!keyInfo) {
+  if (!keyInfo || !isSyncKeyActive(keyInfo, userName)) {
     socket.close(SYNC_CLOSE_CODE.failed)
     return
   }
@@ -449,27 +450,41 @@ export const getDevices = async(userName: string) => {
 export const removeDevice = async(userName: string, clientId: string) => {
   const userSpace = getUserSpace(userName)
   const clientIds = userSpace.dataManage.getDeviceClientIds(clientId)
-  if (wss) {
-    for (const client of wss.clients) {
-      if (client.userInfo?.name != userName || !clientIds.includes(client.keyInfo?.clientId)) continue
-      client.isReady = false
-      for (const name of Object.keys(client.moduleReadys) as Array<keyof LX.Socket['moduleReadys']>) {
-        client.moduleReadys[name] = false
-      }
-      client.close(SYNC_CLOSE_CODE.normal)
-    }
-  }
+  disconnectUserSessions(userName, clientIds)
   await userSpace.removeDevice(clientId)
 }
 
-export const disconnectUserSessions = (userName: string) => {
+export const disconnectUserSessions = (userName: string, clientIds?: string[]) => {
   if (!wss) return
   for (const client of [...wss.clients]) {
-    if (client.userInfo?.name != userName) continue
+    if (client.userInfo?.name != userName || (clientIds && !clientIds.includes(client.keyInfo?.clientId))) continue
     client.isReady = false
     for (const name of Object.keys(client.moduleReadys) as Array<keyof LX.Socket['moduleReadys']>) {
       client.moduleReadys[name] = false
     }
     client.close(SYNC_CLOSE_CODE.normal)
   }
+}
+
+// Called when the HTTP/WS app starts; account storage has no server imports.
+export const registerSyncKeyRevocation = (store: AccountStore) => {
+  const revokeKeys = (username: string, matches: (key: LX.Sync.KeyInfo) => boolean, all = false) => {
+    const space = getUserSpace(username)
+    const ids = space.dataManage.removeClientCredentials(matches)
+    if (all || ids.length) disconnectUserSessions(username, all ? undefined : ids)
+    for (const id of ids) {
+      void Promise.all([space.listManage.removeDevice(id), space.dislikeManage.removeDevice(id)]).catch(error => {
+        syncLog.error('revoked device snapshot cleanup failed', error)
+      })
+    }
+  }
+  store.sessions.onSessionsRevoked(sessions => {
+    for (const session of sessions) {
+      const user = store.findManagedUserById(session.userId)
+      if (user) revokeKeys(user.username, key => key.sessionId == session.id)
+    }
+  })
+  store.onSyncKeysRevoked((username, scope) => {
+    revokeKeys(username, key => scope == 'all' || key.sessionId === undefined, scope == 'all')
+  })
 }

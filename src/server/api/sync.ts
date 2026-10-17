@@ -22,6 +22,8 @@ export const registerSyncApi = async(app: FastifyInstance) => {
         deviceId: getString(request.body.deviceId) || undefined,
         clientId: getString(request.body.clientId) || undefined,
         deviceName,
+        origin: 'account',
+        sessionId: request.authSessionId,
         isMobile: platform ? platform.toLowerCase().includes('mobile') : undefined,
       })
     } catch (err) {

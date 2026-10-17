@@ -23,6 +23,18 @@ const isStore = (data: unknown): data is { version: 1, sessions: LuxSession[] } 
 
 export class SessionStore {
   private data: { version: 1, sessions: LuxSession[] }
+  private revocationListener?: (sessions: LuxSession[]) => void
+
+  onSessionsRevoked(listener: (sessions: LuxSession[]) => void) {
+    this.revocationListener = listener
+  }
+
+  private revokeMatching(matches: (session: LuxSession) => boolean) {
+    const sessions = this.data.sessions.filter(matches)
+    for (const session of sessions) session.revokedAt ??= this.clock()
+    this.save()
+    this.revocationListener?.(sessions)
+  }
 
   constructor(private readonly filePath: string, private readonly clock = Date.now) {
     this.data = loadStoreFile(filePath, 'Sessions', isStore, () => ({ version: 1, sessions: [] }))
@@ -34,21 +46,19 @@ export class SessionStore {
     atomicWriteFileSync(this.filePath, JSON.stringify(this.data, null, 2))
   }
 
-  private expiresAt() {
-    return this.clock() + tokenTTL(process.env.LUX_REFRESH_TOKEN_TTL_DAYS, 90) * day
+  private expiresAt(time = this.clock()) {
+    return time + tokenTTL(process.env.LUX_REFRESH_TOKEN_TTL_DAYS, 90) * day
   }
 
   create(userId: string, device: Pick<LuxSession, 'deviceId' | 'deviceName' | 'platform'> = {}) {
     const time = this.clock()
     if (device.deviceId) {
-      for (const s of this.data.sessions) {
-        if (s.userId == userId && s.deviceId == device.deviceId && s.revokedAt === undefined) s.revokedAt = time
-      }
+      this.revokeMatching(s => s.userId == userId && s.deviceId == device.deviceId)
     }
     const refreshToken = random()
     const session: LuxSession = {
       id: random(), userId, ...device, createdAt: time, lastActiveAt: time,
-      refreshTokenHash: hash(refreshToken), generation: 0, previousRefreshTokenHashes: [], expiresAt: this.expiresAt(),
+      refreshTokenHash: hash(refreshToken), generation: 0, previousRefreshTokenHashes: [], expiresAt: this.expiresAt(time),
     }
     this.data.sessions.push(session)
     this.save()
@@ -79,15 +89,10 @@ export class SessionStore {
   }
 
   revoke(id: string) {
-    const session = this.data.sessions.find(s => s.id == id)
-    if (session && session.revokedAt === undefined) session.revokedAt = this.clock()
-    this.save()
+    this.revokeMatching(s => s.id == id)
   }
 
   revokeUser(userId: string) {
-    for (const s of this.data.sessions) {
-      if (s.userId == userId && s.revokedAt === undefined) s.revokedAt = this.clock()
-    }
-    this.save()
+    this.revokeMatching(s => s.userId == userId)
   }
 }

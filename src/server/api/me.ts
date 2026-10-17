@@ -107,7 +107,7 @@ export const registerMeApi = async(app: FastifyInstance) => {
     const store = getAccountStore()
     const updatedUser = await store.changePassword(user.id, password)
     clearAuthFailures(ip, user.username)
-    // revokeOtherDevices will also revoke sync device keys in a later PR.
+    // Password changes always revoke every sync credential.
     const token = createToken({
       userId: user.id,
       username: user.username,

@@ -138,10 +138,12 @@ export class UserDataManage {
     this.saveDevicesInfo()
   }
 
-  upsertClientKeyInfo = ({ deviceId, clientId, publicKeyHash, deviceName, isMobile }: {
+  upsertClientKeyInfo = ({ deviceId, clientId, publicKeyHash, deviceName, isMobile, origin, sessionId }: {
     deviceId?: string
     clientId?: string
     publicKeyHash?: string
+    origin?: 'account' | 'code'
+    sessionId?: string
     deviceName?: string
     isMobile?: boolean
   }): LX.Sync.KeyInfo => {
@@ -172,6 +174,10 @@ export class UserDataManage {
       // request fields must preserve the current device, even for an alias.
       keyInfo = { ...keyInfo, deviceName: device.deviceName, isMobile: device.isMobile }
     }
+    if (origin) {
+      keyInfo.origin = origin
+      keyInfo.sessionId = sessionId
+    }
     if (deviceId) keyInfo.deviceId = deviceId
     if (publicKeyHash) keyInfo.publicKeyHash = publicKeyHash
     if (deviceName !== undefined) keyInfo.deviceName = deviceName
@@ -193,6 +199,25 @@ export class UserDataManage {
     const deviceClientId = this.getDeviceClientId(clientId)
     if (!ownValue(this.devicesInfo.clients, deviceClientId)) return []
     return [deviceClientId, ...Object.values(this.devicesInfo.clientAliases ?? {}).filter(alias => alias.deviceClientId == deviceClientId).map(alias => alias.clientId)]
+  }
+
+  // Revoke credentials independently of display-device grouping. Surviving
+  // aliases are promoted when their canonical credential is removed.
+  removeClientCredentials = (matches: (key: LX.Sync.KeyInfo) => boolean): string[] => {
+    const ids: string[] = []
+    for (const entries of [this.devicesInfo.clients, this.devicesInfo.clientAliases ?? {}]) {
+      for (const [id, key] of Object.entries(entries)) {
+        if (!matches(key)) continue
+        ids.push(id)
+        // eslint-disable-next-line @typescript-eslint/no-dynamic-delete
+        delete entries[id]
+        deleteUserName(id)
+      }
+    }
+    if (!ids.length) return ids
+    this.devicesInfo = migrateDevicesInfo(this.devicesInfo)
+    this.saveDevicesInfo()
+    return ids
   }
 
   removeClientKeyInfo = async(clientId: string) => {

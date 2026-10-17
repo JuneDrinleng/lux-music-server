@@ -16,6 +16,8 @@ declare namespace LX {
     interface KeyInfo {
       clientId: string
       key: string
+      sessionId?: string
+      origin?: 'account' | 'code'
       deviceName: string
       /** Stable installation identifier supplied by newer clients. */
       deviceId?: string
