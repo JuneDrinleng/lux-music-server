@@ -1412,3 +1412,23 @@ button.lux-row {
     grid-template-columns: 1fr;
   }
 }
+
+.lux-token-page { width: 100%; max-width: 650px; }
+.lux-token-page h1 { font-size: 32px; line-height: 38px; margin: 10px 0 4px; }
+.lux-token-page h2 { font-size: 22px; border-top: 2px solid var(--ink, #111827); padding-top: 12px; margin: 22px 0 0; }
+.lux-token-line { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.lux-token-item { padding: 12px 0; border-bottom: 1px solid var(--well, #e1e6ef); }
+.lux-token-item p { margin: 4px 0 0; }
+.lux-token-check { display: flex; align-items: center; gap: 12px; min-height: 50px; border-bottom: 1px solid var(--well, #e1e6ef); font-weight: 700; }
+.lux-token-check input { width: 20px; height: 20px; accent-color: #111827; }
+.lux-token-check + .lux-token-line { min-height: 58px; }
+.lux-token-secret, .lux-token-connection { margin-top: 8px; padding: 12px; overflow-wrap: anywhere; }
+.lux-token-secret { border-top: 3px solid #111827; }
+.lux-token-page footer { margin-top: 24px; padding-top: 12px; border-top: 2px solid #111827; }
+.lux-token-page footer .primary { flex: 1; justify-content: center; }
+.lux-token-page .lux-input { width: 100%; margin-top: 14px; border: 0; border-bottom: 1.5px solid #111827; border-radius: 0; background: transparent; padding: 6px 0; color: inherit; font: inherit; font-weight: 700; }
+.lux-token-back { border: 1.5px solid #111827; border-radius: 50%; width: 40px; height: 40px; font-size: 24px; margin-bottom: 6px; }
+.lux-token-secret .lux-cassette { background: transparent; color: inherit; padding: 6px 0; letter-spacing: normal; }
+.lux-token-page .lux-seg { padding: 0; gap: 0; border: 1.5px solid #111827; background: transparent; overflow: hidden; }
+.lux-token-page .lux-seg button { border-radius: 0; }
+.lux-token-page .lux-seg button.on { background: #111827; color: #fff; box-shadow: none; }

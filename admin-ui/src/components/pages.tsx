@@ -66,6 +66,7 @@ const COVER_COLORS = ['#ece6f2', '#ebe4d7', '#e4e8f1', '#f6e2e7']
 export const getSectionTitle = (id: SectionId) => {
   const map: Record<SectionId, string> = {
     overview: '总览',
+    tokens: 'MCP 访问令牌',
     'devices-playlists': '设备与歌单',
     'account-sync': '账号与连接码',
     'admin-status': '服务状态',

@@ -6,6 +6,7 @@ import { filterFileName, toMD5 } from '@/utils'
 import { atomicWriteFileSync } from '@/utils/atomicWrite'
 import { loadStoreFile } from './storeFile'
 import { SessionStore } from './sessions'
+import { PatStore } from './pats'
 import { createSecret, hashPassword, hashPasswordSync, verifyPassword } from './password'
 import type { InviteCode, LuxAccountStoreData, LuxManagedUser, LuxUserRole, LuxUserView, PublicUserInfo } from './types'
 
@@ -58,6 +59,7 @@ export class AccountStore {
   private readonly filePath: string
   private data: LuxAccountStoreData
   readonly sessions: SessionStore
+  readonly pats: PatStore
   private syncKeyRevocationListener?: (username: string, scope: 'all' | 'sessionless') => void
 
   onSyncKeysRevoked(listener: (username: string, scope: 'all' | 'sessionless') => void) {
@@ -72,6 +74,7 @@ export class AccountStore {
     this.filePath = path.join(dir, 'accounts.json')
     this.data = this.load()
     this.sessions = new SessionStore(path.join(dir, 'sessions.json'))
+    this.pats = new PatStore(path.join(dir, 'tokens.json'))
     this.ensureEnvAdmin()
     this.saveSync()
   }

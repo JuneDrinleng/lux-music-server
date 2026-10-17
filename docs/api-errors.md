@@ -21,6 +21,7 @@ errors are unchanged. Rate limiting now uses HTTP 429 instead of 403.
 | `PROFILE_SAVE_FAILED` | 500 | Profile persistence failed |
 | `MISSING_FIELDS` | 400 | Required fields are absent or empty |
 | `NOT_FOUND` | 404 | API route or requested resource does not exist |
+| `TOKEN_NOT_FOUND` | 404 | PAT is absent or belongs to another user |
 | `SESSION_NOT_FOUND` | 404 | Session is absent or belongs to another user |
 | `USER_NOT_FOUND` | 404 | Managed user does not exist |
 | `INVITE_NOT_FOUND` | 404 check/admin; 400 register | Invite does not exist |

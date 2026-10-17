@@ -9,6 +9,7 @@ import {
   StatusSection,
   UsersSection,
 } from '@/components/pages'
+import { TokensSection } from '@/components/TokensSection'
 import { Toast } from '@/components/primitives'
 import { ApiError, adminApi, authApi, getToken, meApi, setToken } from '@/lib/api'
 import type { AdminStatusResponse, Device, Invite, PlaylistSummary, PublicUser, SectionId, UserView } from '@/types'
@@ -153,6 +154,7 @@ function App() {
         />
       )
     }
+    if (activeSection == 'tokens') return <TokensSection notify={notify} onLogout={logout} />
     if (activeSection == 'account-sync') {
       return <AccountSection me={me} adminStatus={adminStatus} onLogout={logout} notify={notify} />
     }
