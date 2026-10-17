@@ -14,7 +14,7 @@ import featureHandler from '../../src/server/sync/handler'
 import { sync } from '../../src/server/sync/sync'
 import { syncLog } from '../../src/utils/log4js'
 import { parseJson, resetTestState } from '../helpers'
-import { createFakeClock, createFakeSocket, unwrap } from './fakes'
+import { createFakeClock, createFakeSocket, song, unwrap } from './fakes'
 import type { FastifyInstance } from 'fastify'
 
 describe('together protocol wiring', () => {
@@ -34,9 +34,48 @@ describe('together protocol wiring', () => {
   it('advertises together=1 and exposes every method on callObj', () => {
     assert.equal(featureVersion.together, 1)
     assert.equal(featureVersion['together.reaction'], 1)
+    assert.equal(featureVersion['together.request'], 1)
     assert.equal(featureVersion.list, 1)
     assert.equal(featureVersion.dislike, 1)
     for (const method of Object.values(TOGETHER_METHODS)) assert.equal(typeof (callObj as Record<string, unknown>)[method], 'function', method)
+  })
+
+  it('validates request RPC payloads without changing state and negotiates the capability', async() => {
+    const host = createFakeSocket('c_alice', 'alice')
+    host.feature['together.request'] = true
+    unwrap(await handler['together:createRoom'](host))
+    for (const req of [null, [], {}, { song: { ...song('bad'), source: 'local' } }, { song: { id: 1 } }]) {
+      const result = await handler['together:request:add'](host, req as any)
+      assert.equal(result.ok, false)
+      if (!result.ok) assert.equal(result.code, 'INVALID_MUSIC')
+    }
+    for (const action of ['approve', 'reject', 'remove', 'reorder'] as const) {
+      for (const req of [null, [], {}, { requestId: 4 }, { requestId: '' }]) {
+        const result = await handler[`together:request:${action}`](host, req as any)
+        assert.equal(result.ok, false)
+        if (!result.ok) assert.equal(result.code, 'INVALID_PARAMS')
+      }
+    }
+    unwrap(await handler['together:request:add'](host, { song: song('one') }))
+    const before = unwrap(await handler['together:getRoom'](host))!
+    for (const expectedQueueVersion of [null, '1', -1, 1.5, Infinity]) {
+      const result = await handler['together:request:approve'](host, { requestId: before.requests![0].id, expectedQueueVersion } as any)
+      assert.equal(result.ok, false)
+      if (!result.ok) assert.equal(result.code, 'INVALID_PARAMS')
+    }
+    assert.deepEqual(unwrap(await handler['together:getRoom'](host)), before)
+    await featureHandler.onFeatureChanged(host, { 'together.request': false })
+    assert.equal('requests' in unwrap(await handler['together:getRoom'](host))!, false)
+    host.remote = {
+      getEnabledFeatures: async() => ({ together: true, 'together.request': true }),
+      together_sync_finished: async() => {},
+      finished: async() => {},
+    } as unknown as LX.Socket['remote']
+    await sync(host)
+    assert.equal(host.feature['together.request'], true)
+    assert.deepEqual(unwrap(await handler['together:getRoom'](host))!.requests, before.requests)
+    host.moduleReadys.together = false
+    await assert.rejects(handler['together:request:add'](host, { song: song('two') }), /together is not enabled/)
   })
 
   it('validates the reaction allowlist and rejects malformed RPC payloads without broadcasts', async() => {

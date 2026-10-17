@@ -25,6 +25,14 @@ declare namespace LX {
         items: LX.Music.MusicInfoOnline[] // 最多 200 首，只放在线歌曲
         currentId: string | null           // 当前歌曲的 musicInfo.id
       }
+      interface SongRequest {
+        id: string
+        song: LX.Music.MusicInfoOnline
+        requestedBy: { memberId: string, displayName: string }
+        at: number
+        status: 'pending'
+      }
+      interface RequestsPush { roomId: string, requests: SongRequest[], version: number }
       interface RoomSnapshot {
         roomId: string           // UUID，每次开房都不同
         code: string             // 6 位数字邀请码
@@ -37,6 +45,8 @@ declare namespace LX {
         queueVersion: number
         playback: Playback
         queue: Queue
+        requests?: SongRequest[]
+        requestsVersion?: number
         serverTime: number       // 生成这份快照时的 Date.now()
       }
 
@@ -106,6 +116,11 @@ declare namespace LX {
       'together:hostUpdateState': (req: Together.HostUpdateStateRequest) => LuxResult<Together.UpdateAck>
       'together:hostUpdateQueue': (req: Together.HostUpdateQueueRequest) => LuxResult<Together.UpdateAck>
       'together:transferHost': (req: { roomId: string, memberId: string }) => LuxResult<null>
+      'together:request:add': (req: { song: LX.Music.MusicInfoOnline }) => LuxResult<null>
+      'together:request:approve': (req: { requestId: string, expectedQueueVersion?: number }) => LuxResult<Together.UpdateAck>
+      'together:request:reject': (req: { requestId: string }) => LuxResult<null>
+      'together:request:remove': (req: { requestId: string }) => LuxResult<null>
+      'together:request:reorder': (req: { requestIds: string[] }) => LuxResult<null>
       'together:reaction': (req: { emoji: string }) => LuxResult<null>
       'together:ping': (req: { t0: number }) => LuxResult<Together.PingResult>
     }>
@@ -113,6 +128,7 @@ declare namespace LX {
       'together:onRoomState': (push: Together.RoomStatePush) => void
       'together:onMemberChanged': (push: Together.MemberChangedPush) => void
       'together:onHostChanged': (push: Together.HostChangedPush) => void
+      'together:onRequests': (push: Together.RequestsPush) => void
       'together:onReaction': (push: Together.ReactionPush) => void
       'together:onRoomClosed': (push: Together.RoomClosedPush) => void
     }>

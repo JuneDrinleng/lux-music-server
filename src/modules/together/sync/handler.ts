@@ -40,6 +40,26 @@ const handler: TogetherHandler = {
     requireEnabled(socket)
     return getRoomManager().transferHost(socket, req)
   },
+  async 'together:request:add'(socket, req) {
+    requireEnabled(socket)
+    return getRoomManager().requestAdd(socket, req)
+  },
+  async 'together:request:approve'(socket, req) {
+    requireEnabled(socket)
+    return getRoomManager().requestApprove(socket, req)
+  },
+  async 'together:request:reject'(socket, req) {
+    requireEnabled(socket)
+    return getRoomManager().requestReject(socket, req)
+  },
+  async 'together:request:remove'(socket, req) {
+    requireEnabled(socket)
+    return getRoomManager().requestRemove(socket, req)
+  },
+  async 'together:request:reorder'(socket, req) {
+    requireEnabled(socket)
+    return getRoomManager().requestReorder(socket, req)
+  },
   async 'together:reaction'(socket, req) {
     requireEnabled(socket)
     return getRoomManager().reaction(socket, req)
