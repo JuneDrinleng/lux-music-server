@@ -38,7 +38,7 @@ node -e 'fetch("http://127.0.0.1:9527/api/auth/bootstrap", {method:"POST",header
 4. 申请对应域名的可信证书，将 **Apache 格式证书和私钥**保存到 NAS；隧道中填写客户端可读的**绝对路径**。frpc 容器部署时还需挂载证书目录，填写容器内路径。源站 HTTP 由 frpc `https2http` 插件转换，不需要给 Lux 配置 TLS。证书设置见 [官方 HTTPS 教程](https://doc.passnat.com/docs/app/https)，注意按期续证并更新文件。
 5. 启动隧道，始终用 `https://<域名>` 访问；Lux 源站仍是 HTTP。不要用 `http://` 或节点 IP 代替 HTTPS 域名。
 
-同步 WebSocket 与 HTTP 使用同一个 9527 端口，应通过此 HTTPS 隧道建立 WSS。**需在 NAS 实测 App 同步、空闲后重连**，确认节点支持并转发 Upgrade，超时至少 300 秒。未来 MCP 的 SSE／流式响应也需检查隧道及代理是否缓冲、是否及时逐段转发；当前没有 MCP 端点可用于验证。
+同步 WebSocket 与 HTTP 使用同一个 9527 端口，应通过此 HTTPS 隧道建立 WSS。**需在 NAS 实测 App 同步、空闲后重连**，确认节点支持并转发 Upgrade，超时至少 300 秒。MCP `/mcp` 的 SSE／流式响应需检查隧道及代理是否缓冲、是否及时逐段转发；令牌与客户端配置见 [MCP 使用指南](mcp.md)。
 
 ### 真实 IP 与公开地址
 
@@ -107,4 +107,4 @@ location / {
 }
 ```
 
-**June 在 NAS 操作：** 将 Nginx 的实际源地址加入 `LUX_TRUST_PROXY`，保留 `PROXY_HEADER=x-forwarded-for`，设置最终 HTTPS 地址并重复验证。`proxy_buffering off` 为后续 SSE／流式响应保留及时转发能力；若前面还有 PassNAT，也需验证该层缓冲行为。
+**June 在 NAS 操作：** 将 Nginx 的实际源地址加入 `LUX_TRUST_PROXY`，保留 `PROXY_HEADER=x-forwarded-for`，设置最终 HTTPS 地址并重复验证。`proxy_buffering off` 使 MCP SSE／流式响应及时转发；若前面还有 PassNAT，也需验证该层缓冲行为。

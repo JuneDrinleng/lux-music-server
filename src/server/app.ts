@@ -13,6 +13,7 @@ import { registerMeApi } from './api/me'
 import { registerPatApi, registerPatHooks } from './api/pats'
 import { registerSyncApi } from './api/sync'
 import { registerTogetherApi } from './api/together'
+import { registerMcp } from './mcp'
 import { sendError } from './api/errors'
 import { parsePublicUrl, parseTrustProxy } from './proxyConfig'
 
@@ -92,6 +93,7 @@ export const createApp = (): FastifyInstance => {
   })
 
   registerPatHooks(app)
+  registerMcp(app, SERVER_PACKAGE_VERSION, publicUrl)
 
   app.setErrorHandler((error, request, reply) => {
     const statusCode = error.statusCode ?? 500
