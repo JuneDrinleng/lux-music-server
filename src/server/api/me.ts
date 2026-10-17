@@ -5,7 +5,7 @@ import { createToken } from '@/account/token'
 import { getUserSpace } from '@/user'
 import { removeDevice } from '../server'
 import { getRequiredAuthUser, requireAuth, type AuthRequest } from './authGuard'
-import { getString, isRecord } from './utils'
+import { getString, isRecord, toPublicDevice } from './utils'
 import { clearAuthFailures, getRequestIP, isAuthRateLimited, recordAuthFailure } from './rateLimit'
 
 const getOptionalProfileString = (value: unknown, maxLength: number) => {
@@ -70,7 +70,7 @@ export const registerMeApi = async(app: FastifyInstance) => {
 
   app.get('/api/me/devices', { preHandler: requireAuth }, async(request: AuthRequest) => {
     const user = getRequiredAuthUser(request)
-    return { devices: await getUserSpace(user.username).getDecices() }
+    return { devices: (await getUserSpace(user.username).getDecices()).map(toPublicDevice) }
   })
 
   app.delete('/api/me/devices/:clientId', { preHandler: requireAuth }, async(request: AuthRequest) => {

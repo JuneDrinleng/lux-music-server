@@ -5,7 +5,7 @@ import { releaseUserSpace, getUserName, getUserSpace } from '@/user'
 import { disconnectUserSessions, removeDevice } from '../server'
 import { getServerStatus } from '../status'
 import { getRequiredAuthUser, requireAdmin, type AuthRequest } from './authGuard'
-import { getNumber, getOptionalString, getString, isRecord } from './utils'
+import { getNumber, getOptionalString, getString, isRecord, toPublicDevice } from './utils'
 
 const getRole = (value: unknown): 'admin' | 'user' | undefined => {
   if (typeof value != 'string') return undefined
@@ -28,7 +28,7 @@ export const registerAdminApi = async(app: FastifyInstance) => {
   app.get('/api/admin/status', { preHandler: requireAdmin }, async() => {
     const status = getServerStatus()
     const devices = (status.devices ?? []).map(device => ({
-      ...device,
+      ...toPublicDevice(device),
       userName: device.clientId ? getUserName(device.clientId) ?? undefined : undefined,
     }))
     return {
@@ -149,7 +149,7 @@ export const registerAdminApi = async(app: FastifyInstance) => {
     const id = (request.params as { id?: string }).id
     const user = id ? getAccountStore().findManagedUserById(id) : null
     if (!user) return reply.code(404).send({ message: 'User not found' })
-    return { devices: await getUserSpace(user.username).getDecices() }
+    return { devices: (await getUserSpace(user.username).getDecices()).map(toPublicDevice) }
   })
 
   app.delete('/api/admin/users/:id/devices/:clientId', { preHandler: requireAdmin }, async(request, reply) => {
