@@ -3,6 +3,7 @@ import { getAccountStore } from '@/account/store'
 import { isSocketOpen } from '@/server/socketState'
 import { getUserSpace } from '@/user'
 import { broadcastRoom } from './broadcast'
+import { ChatStore } from './chatStore'
 import { type Clock, createPingResult, systemClock } from './clock'
 import { TOGETHER_LIMITS, type TogetherConfig, readTogetherConfig } from './protocol'
 import {
@@ -32,6 +33,7 @@ interface MemberEntry {
   socket: LX.Socket | null
   graceTimer: unknown
   reactions: number[]
+  chats: number[]
 }
 
 interface Room {
@@ -52,6 +54,7 @@ interface Room {
 }
 
 export interface RoomManagerOptions {
+  chatStore?: ChatStore
   config?: Partial<TogetherConfig>
   clock?: Clock
   /** Only active managed Lux accounts may use rooms; legacy `config.users` cannot. */
@@ -92,6 +95,7 @@ const isLimited = (hits: number[], now: number, limit: number, windowMs: number)
 }
 
 export class RoomManager {
+  private readonly chatStore: ChatStore
   readonly config: TogetherConfig
   private readonly clock: Clock
   private readonly getAccount: (socket: LX.Socket) => MemberAccount | null
@@ -104,6 +108,7 @@ export class RoomManager {
   private readonly joinFailures = new Map<string, number[]>()
 
   constructor(options: RoomManagerOptions = {}) {
+    this.chatStore = options.chatStore ?? new ChatStore()
     this.config = { ...readTogetherConfig(), ...options.config }
     this.clock = options.clock ?? systemClock
     this.getAccount = options.getAccount ?? getManagedAccount
@@ -419,6 +424,45 @@ export class RoomManager {
     return ok(null)
   }
 
+  async chatSend(socket: LX.Socket, req: unknown): Promise<Result<LX.Sync.Together.ChatMessage>> {
+    if (!socket.feature['together.chat']) return fail('INVALID_PARAMS', 'together.chat is not enabled')
+    const found = this.findRequestMember(socket)
+    if (!found.ok) return found
+    if (!isRecord(req) || typeof req.text != 'string' || /[\p{Cc}]/u.test(req.text.replace(/\n/g, '')) ||
+      !req.text.trim() || req.text.trim().length > 500 || typeof req.clientMsgId != 'string' ||
+      !req.clientMsgId.trim() || req.clientMsgId.length > 200) return fail('INVALID_PARAMS', 'Invalid chat text or clientMsgId')
+    const { room, member } = found.data
+    let rejected: Result<never> = fail('NOT_IN_ROOM', 'Not an active member of this room')
+    const result = await this.chatStore.append({
+      roomId: room.roomId, senderId: member.deviceId, displayName: member.info.displayName,
+      text: req.text.trim(), at: this.clock.now(), clientMsgId: req.clientMsgId,
+    }, created => {
+      const current = this.findRequestMember(socket)
+      if (!current.ok || current.data.room !== room || !socket.feature['together.chat']) return false
+      if (!created) return true
+      const now = this.clock.now()
+      if (isLimited(member.chats, now, 60, 60_000) || member.chats.filter(at => at > now - 5000).length >= 5) {
+        rejected = fail('RATE_LIMITED', 'Too many chat messages (maximum 5 per 5 seconds and 60 per minute)')
+        return false
+      }
+      member.chats.push(now)
+      return true
+    })
+    if (!result) return rejected
+    if (result.created) broadcastRoom(room, async remote => remote['together:onChat']({ roomId: room.roomId, message: result.message }), undefined, 'together.chat')
+    return ok(result.message)
+  }
+
+  chatHistory(socket: LX.Socket, req: unknown): Result<LX.Sync.Together.ChatPage> {
+    if (!socket.feature['together.chat']) return fail('INVALID_PARAMS', 'together.chat is not enabled')
+    const found = this.findRequestMember(socket)
+    if (!found.ok) return found
+    if (!isRecord(req) || req.roomId !== found.data.room.roomId) return fail('NOT_IN_ROOM', 'Not in this room')
+    if ((req.beforeId !== undefined && (!Number.isSafeInteger(req.beforeId) || req.beforeId < 1)) ||
+      (req.limit !== undefined && (!Number.isInteger(req.limit) || req.limit < 1))) return fail('INVALID_PARAMS', 'Invalid history cursor or limit')
+    return ok(this.chatStore.history(req.roomId, req.beforeId, Math.min(req.limit ?? 50, 100)))
+  }
+
   ping(req: unknown): Result<LX.Sync.Together.PingResult> {
     const t0 = isRecord(req) ? req.t0 : undefined
     if (!isFiniteNumber(t0)) return fail('INVALID_PARAMS', 't0 must be a number')
@@ -531,6 +575,7 @@ export class RoomManager {
       socket,
       graceTimer: null,
       reactions: [],
+      chats: [],
     }
   }
 
@@ -683,6 +728,7 @@ export class RoomManager {
       playback: { ...room.playback },
       queue: { items: [...room.queue.items], currentId: room.queue.currentId },
       serverTime: this.clock.now(),
+      ...(socket.feature['together.chat'] ? { chat: this.chatStore.history(room.roomId).messages } : {}),
       ...(socket.feature['together.request'] ? { requests: this.requests(room), requestsVersion: room.requestsVersion } : {}),
     }
   }

@@ -4,6 +4,7 @@
  */
 import { syncLog } from '@/utils/log4js'
 
+export const TOGETHER_CHAT_FEATURE_VERSION = 1
 export const TOGETHER_FEATURE_VERSION = 1
 export const TOGETHER_REACTION_FEATURE_VERSION = 1
 export const TOGETHER_REQUEST_FEATURE_VERSION = 1
@@ -20,6 +21,8 @@ export const TOGETHER_METHODS = {
   hostUpdateState: 'together:hostUpdateState',
   hostUpdateQueue: 'together:hostUpdateQueue',
   transferHost: 'together:transferHost',
+  chatSend: 'together:chat:send',
+  chatHistory: 'together:chat:history',
   reaction: 'together:reaction',
   requestAdd: 'together:request:add',
   requestApprove: 'together:request:approve',
@@ -34,6 +37,7 @@ export const TOGETHER_PUSHES = {
   memberChanged: 'together:onMemberChanged',
   hostChanged: 'together:onHostChanged',
   roomClosed: 'together:onRoomClosed',
+  chat: 'together:onChat',
   reaction: 'together:onReaction',
   requests: 'together:onRequests',
 } as const

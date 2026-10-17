@@ -60,6 +60,14 @@ const handler: TogetherHandler = {
     requireEnabled(socket)
     return getRoomManager().requestReorder(socket, req)
   },
+  async 'together:chat:send'(socket, req) {
+    requireEnabled(socket)
+    return getRoomManager().chatSend(socket, req)
+  },
+  async 'together:chat:history'(socket, req) {
+    requireEnabled(socket)
+    return getRoomManager().chatHistory(socket, req)
+  },
   async 'together:reaction'(socket, req) {
     requireEnabled(socket)
     return getRoomManager().reaction(socket, req)

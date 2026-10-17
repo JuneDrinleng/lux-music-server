@@ -72,6 +72,8 @@ curl https://<域名>/api/server-info
 - `data/data/lux/sessions.json`：登录会话；
 - `data/data/users/`：用户同步数据、设备、快照等，以及 `data/data/` 中其余服务数据。
 
+一起听聊天永久保存在 `DATA_PATH/lux/together-chat/<roomId 的 UTF-8 十六进制编码>.jsonl`（默认宿主机 `data/data/lux/together-chat/`），关房或重启都不会清理，存储会随聊天量持续增长，请将此目录纳入备份并监控磁盘空间；关房后任何人都不能再通过 RPC 读取。需手动删除时先停止容器，按文件中 `roomId` 确认目标并备份，再删除对应 `.jsonl` 文件后启动；删除不可恢复。运行中备份可能包含未写完的末行，读取时会忽略该行。
+
 可停止容器后复制，也可运行中复制：关键 JSON 以原子替换保存，单文件不会读到半份写入；运行中跨文件副本可能对应不同时刻，需一致快照时先停止容器。不要把 `.tmp-*` 当作有效备份。
 
 已有 `accounts.json`／`sessions.json` 不可读、损坏或结构无效时，服务会**拒绝启动**，`restart: unless-stopped` 可能导致重启循环。查看日志中的 `*.corrupt-<timestamp>` 备份路径（备份失败也会记录原因），然后：

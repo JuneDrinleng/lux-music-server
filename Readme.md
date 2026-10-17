@@ -414,3 +414,23 @@ without modifying state. Host-only actions return `NOT_HOST`; removing another
 member's request returns `NOT_REQUESTER`. Existing queue size and host update
 rate limits also apply to approvals. Clients without the capability receive
 neither request fields in snapshots nor request pushes.
+
+#### Listen Together chat
+
+Clients opt in with `together.chat: true` (advertised version 1), alongside
+`together: true`. Active members call `together:chat:send { text, clientMsgId }`;
+its result contains the persisted message, also pushed to capable members
+(including the sender) as `together:onChat { roomId, message }`. Text is trimmed,
+1–500 characters, with no control characters except newline. A nonempty
+`clientMsgId` (up to 200 characters) deduplicates retries per canonical sender
+device and room; retries return the original message without another push.
+Limits are 5 new messages per 5 seconds and 60 per minute per member.
+
+`together:chat:history { roomId, beforeId?, limit? }` returns
+`{ messages, hasMore }`, newest first, with an exclusive numeric `beforeId`;
+limit defaults to 50 and is capped at 100. Capable join/rejoin/getRoom snapshots
+include `chat`, the newest 50 messages. Messages contain `id` (increasing per
+room), `roomId`, `senderId` (canonical device), `displayName`, `text`, `at`, and
+`clientMsgId`. Only active room members may retrieve history. Closed rooms
+(and rooms lost on server restart) are inaccessible via RPC to everyone, while
+their JSONL files remain permanently on disk. There is no retention cleanup.

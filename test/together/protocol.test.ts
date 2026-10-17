@@ -35,9 +35,24 @@ describe('together protocol wiring', () => {
     assert.equal(featureVersion.together, 1)
     assert.equal(featureVersion['together.reaction'], 1)
     assert.equal(featureVersion['together.request'], 1)
+    assert.equal(featureVersion['together.chat'], 1)
     assert.equal(featureVersion.list, 1)
     assert.equal(featureVersion.dislike, 1)
     for (const method of Object.values(TOGETHER_METHODS)) assert.equal(typeof (callObj as Record<string, unknown>)[method], 'function', method)
+  })
+
+  it('negotiates chat and gates its RPCs and snapshots', async() => {
+    const socket = createFakeSocket('c_alice', 'alice')
+    unwrap(await handler['together:createRoom'](socket))
+    assert.equal((await handler['together:chat:send'](socket, { text: 'hi', clientMsgId: '1' })).ok, false)
+    await featureHandler.onFeatureChanged(socket, { 'together.chat': true })
+    const message = unwrap(await handler['together:chat:send'](socket, { text: 'hi', clientMsgId: '1' }))
+    assert.deepEqual(unwrap(await handler['together:getRoom'](socket))!.chat, [message])
+    await featureHandler.onFeatureChanged(socket, { 'together.chat': false })
+    assert.equal('chat' in unwrap(await handler['together:getRoom'](socket))!, false)
+    socket.moduleReadys.together = false
+    await assert.rejects(handler['together:chat:send'](socket, { text: 'hi', clientMsgId: '2' }), /together is not enabled/)
+    await assert.rejects(handler['together:chat:history'](socket, { roomId: message.roomId }), /together is not enabled/)
   })
 
   it('validates request RPC payloads without changing state and negotiates the capability', async() => {
