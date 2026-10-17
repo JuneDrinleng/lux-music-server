@@ -103,6 +103,7 @@ TTL 必须是有限正数，否则使用默认值；不影响旧 `token` 的 14 
   "packageVersion": "0.0.1",
   "minClientVersion": null,
   "publicUrl": null,
+  "adminContact": null,
   "mcp": { "tokens": true },
   "registration": { "inviteOnly": true, "enabled": true },
   "features": ["sessions", "refresh", "me-sessions", "invite-check"]
@@ -112,6 +113,7 @@ TTL 必须是有限正数，否则使用默认值；不影响旧 `token` 的 14 
 `version` 优先使用 `LUX_VERSION`，否则使用 `package.json`；`packageVersion` 始终是包版本。
 现有 Docker 发布未设置 `LUX_VERSION`，但 release workflow 在构建前将发布版本写入包文件。
 `minClientVersion` 来自 `LUX_MIN_CLIENT_VERSION`，未设置时为 `null`。
+`adminContact` 为 `{ name: string, username?: string } | null`：优先使用 `LUX_ADMIN_CONTACT`（去除首尾空白后截取前 100 个字符），仅返回 `name`；未设置或空白时使用账号库中第一个启用管理员的 `displayName`（为空则用 `username`），并附带 `username`；无启用管理员时返回 `null`。该公开接口不会返回邮箱、ID、密码哈希或其他账号字段。
 `publicUrl` 来自 `LUX_PUBLIC_URL`，未设置或不是无末尾斜杠的 HTTP(S) 基址时为 `null`（非法值会警告）；配置方法见 [fnOS 部署指南](deploy-fnos.md)。
 `enabled` 表示邀请码注册端点可用，不代表当前一定有可用邀请码。服务端不报告 HTTPS 状态，客户端自行判断。
 

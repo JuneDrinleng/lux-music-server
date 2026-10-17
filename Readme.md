@@ -219,6 +219,7 @@ server {
 | `LUX_TOKEN_SECRET` | **生产环境必须设置**的 Web 登录 JWT 签名密钥。未设置时服务仍可启动，但会向控制台打印明显警告，并在 `data/lux/accounts.json` 写入随机 secret；容器重建或误删该文件会导致全部 Web 登录态失效。 |
 | `LUX_BOOTSTRAP_TOKEN` | 首次创建管理员的保护 token。未配置时，`POST /api/auth/bootstrap` **仅允许**来自本机回环地址（`127.0.0.1` / `::1`）的请求；公网 / Docker 端口映射访问会被拒绝。配置后，远程请求需在请求头携带 `x-lux-bootstrap-token: <token>`。也可用 `LUX_ADMIN_USER` + `LUX_ADMIN_PASSWORD` 在启动时直接创建管理员，避免走 bootstrap。 |
 | `LUX_ADMIN_USER` / `LUX_ADMIN_PASSWORD` | 可选。若同时设置且该用户尚不存在，启动时自动创建管理员账号（适合 Docker 首次部署）。 |
+| `LUX_ADMIN_CONTACT` | 可选公开管理员联系方式。在 `GET /api/server-info` 的 `adminContact` 返回 `{ name: string, username?: string }` 或 `null`。去除首尾空白后截取前 100 个字符，仅作为 `name`，不附带用户名；未设置或空白时使用账号库中第一个启用管理员的显示名（无显示名则用用户名），并附带 `username`；无启用管理员时为 `null`。不会返回邮箱、ID、密码哈希或其他账号字段。 |
 | `LUX_TOGETHER_MAX_MEMBERS` | 一起听单房间成员上限（**含房主**），默认 `10`，合法范围 2–50。 |
 | `LUX_TOGETHER_MAX_ROOMS` | 服务端同时存在的房间数上限，默认 `100`。 |
 | `LUX_TOGETHER_GRACE_MS` | 成员/房主断线后的宽限期（毫秒），默认 `30000`，合法范围 5000–300000。 |

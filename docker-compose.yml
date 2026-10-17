@@ -20,6 +20,8 @@ services:
       # LUX_BOOTSTRAP_TOKEN: change-me  # 远程首次建管理员时需要
       # LUX_ADMIN_USER: admin
       # LUX_ADMIN_PASSWORD: change-me
+      # 可选公开联系方式（去除首尾空白后最多 100 字符，仅作为 name）；未设置时使用首个启用管理员的显示名/用户名。
+      # LUX_ADMIN_CONTACT: 联系管理员
       # 如使用反向代理，请设置真实 IP 请求头，并在代理中传递该 header。
       # PROXY_HEADER: x-real-ip
       # 一起听（单实例内存房间；多副本不支持）

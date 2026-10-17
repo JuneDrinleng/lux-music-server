@@ -29,6 +29,13 @@ const readServerPackageVersion = () => {
 
 const SERVER_PACKAGE_VERSION = readServerPackageVersion()
 
+const getAdminContact = (): { name: string, username?: string } | null => {
+  const name = process.env.LUX_ADMIN_CONTACT?.trim().slice(0, 100)
+  if (name) return { name }
+  const admin = getAccountStore().getManagedUsers().find(user => user.role == 'admin' && user.status == 'active')
+  return admin ? { name: admin.displayName || admin.username, username: admin.username } : null
+}
+
 const builtAdminDir = path.resolve(__dirname, '../../admin-ui/dist')
 const webDir = process.env.NODE_ENV == 'production' || !fsSync.existsSync(builtAdminDir)
   ? path.join(__dirname, 'web')
@@ -126,6 +133,7 @@ export const createApp = (): FastifyInstance => {
       packageVersion: SERVER_PACKAGE_VERSION,
       minClientVersion: process.env.LUX_MIN_CLIENT_VERSION?.trim() || null,
       publicUrl,
+      adminContact: getAdminContact(),
       mcp: { tokens: true },
       ...(publicUrl ? { mcpUrl: `${publicUrl}/mcp` } : {}),
       registration: { inviteOnly: true, enabled: true },
