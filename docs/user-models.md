@@ -34,7 +34,7 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 - **连接码（lxSyncCode）**：投影为 `config.users[].password`，用于 LX 客户端 `/ah`。
 - 管理台「查看/重置连接码」改的是 `lxSyncCode`，不会改登录密码。
 - 改登录密码会 `sessionVersion++`，使已有 JWT 失效；重置连接码只影响同步鉴权。
-- 自助修改密码（`POST /api/me/password`）需提交 `oldPassword` 和新 `password`；成功后返回 `{ ok: true, token, user }`，Web 管理台保存新 token 以保持当前登录。可选的 `revokeOtherDevices` 必须是布尔值；修改密码始终撤销该账号全部同步设备密钥（不论此字段的值）。
+- 自助修改密码（`POST /api/me/password`）需提交 `oldPassword` 和新 `password`；成功后返回 `{ ok: true, token, user }`，Web 管理台保存新 token 以保持当前登录。可选的 `revokeOtherDevices` 必须是布尔值；该字段仅为兼容保留，修改密码始终撤销该账号全部会话和同步设备密钥（不论此字段的值）。
 
 对仅存在于 `config.js` / `LX_USER_*` 的遗留用户：
 
@@ -56,7 +56,15 @@ global.lx.config.users  ←── 还可能含 config.js / LX_USER_* 遗留用�
 - 每个会话是一条刷新令牌家族，保存 generation 和已轮换令牌的 SHA-256 哈希用于重放检测。重用已轮换令牌会撤销整个会话，连同该家族最新的刷新令牌也失效。未知、过期、已撤销或重放返回 401；沿用按 IP 的失败次数限制（达到限制后 403）。客户端应串行刷新并及时保存新令牌。
 - 携带 `sid` 的令牌调用 `POST /api/auth/logout` 只撤销当前会话；旧令牌登出仍提升 `sessionVersion`，使该账号全部 JWT 失效，同时撤销全部刷新会话。
 - 修改密码（包括管理员重置）或禁用账号会撤销全部会话；禁用也提升 `sessionVersion`。重新启用后需重新登录创建会话。自助改密仍返回替换用的旧格式 `token`。
-- 会话保存到 `DATA_PATH/lux/sessions.json`（与 `accounts.json` 同目录），只存刷新令牌哈希，不存原文。沿用原子写入和损坏/不可读文件备份后拒绝启动策略；临时文件不参与恢复。保存时清理撤销超过 30 天或过期超过 30 天的会话。会话管理 API 不属于本阶段；同步设备密钥生命周期见下表。
+- 会话保存到 `DATA_PATH/lux/sessions.json`（与 `accounts.json` 同目录），只存刷新令牌哈希，不存原文。沿用原子写入和损坏/不可读文件备份后拒绝启动策略；临时文件不参与恢复。保存时清理撤销超过 30 天或过期超过 30 天的会话。会话自助管理 API 见下文；同步设备密钥生命周期见下表。
+
+### 会话自助管理（PR 2.3）
+
+以下接口适用于所有已登录账号，无需管理员权限：
+
+- `GET /api/me/sessions` 返回 `{ sessions: [...] }`，仅包含本人未撤销且未过期的会话，按 `lastActiveAt` 降序排列。字段白名单为 `id`、`deviceId`、`deviceName`、`platform`、`createdAt`、`lastActiveAt`、`current`；可选设备字段未设置时省略，不返回刷新令牌哈希或历史。`current` 表示会话 ID 与请求令牌的 `sid` 相同；旧 token 的所有条目均为 `false`。
+- `DELETE /api/me/sessions/:id` 撤销本人的指定会话，返回 `{ ok: true }`。不存在或属于其他账号时统一返回 404。允许撤销当前会话（相当于该会话登出），其 accessToken、refreshToken 和绑定的同步密钥随即失效。
+- `POST /api/me/sessions/revoke-others` 撤销本人除当前 `sid` 以外的全部会话，返回 `{ ok: true, revoked: <新撤销的会话数> }`，已撤销的会话不重复计数。旧 token 没有 `sid`，因此撤销本人全部会话；旧 token 本身保持原有鉴权方式。两种撤销操作均通过会话存储通知同步密钥撤销监听器，不影响其他账号。
 
 ### 同步密钥生命周期（PR 2.2）
 

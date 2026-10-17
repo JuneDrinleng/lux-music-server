@@ -128,6 +128,93 @@ describe('session tokens', () => {
     }
   })
 
+  it('lists only own active sessions with a strict public whitelist and current flag', async t => {
+    let time = Date.now()
+    t.mock.method(Date, 'now', () => time)
+    initAccountStore(global.lx.dataPath)
+    const first = await login('phone')
+    time += 1000
+    const second = await login('tablet')
+    const store = getAccountStore()
+    const alice = store.findManagedUserByUsername('alice')!
+    const bob = await store.createUser({ username: 'bob', password: 'bob-pass' })
+    store.sessions.create(bob.id)
+    const revoked = store.sessions.create(alice.id).session
+    store.sessions.revoke(revoked.id)
+    const expired = store.sessions.create(alice.id).session
+    expired.expiresAt = time
+    time += 1000
+    assert.equal((await refresh(first.refreshToken)).statusCode, 200)
+    const res = await app.inject({ url: '/api/me/sessions', headers: { authorization: `Bearer ${second.accessToken}` } })
+    assert.equal(res.statusCode, 200)
+    const sessions = parseJson(res.body).sessions
+    assert.deepEqual(sessions.map((s: any) => s.id), [first.sessionId, second.sessionId])
+    assert.deepEqual(sessions.map((s: any) => s.current), [false, true])
+    for (const session of sessions) {
+      assert.deepEqual(Object.keys(session).sort(), ['id', 'deviceId', 'deviceName', 'platform', 'createdAt', 'lastActiveAt', 'current'].sort())
+      assert.equal(session.deviceName, 'Phone')
+      assert.equal(session.platform, 'ios')
+    }
+    const legacy = await app.inject({ url: '/api/me/sessions', headers: { authorization: `Bearer ${second.token}` } })
+    assert.ok(parseJson(legacy.body).sessions.every((s: any) => s.current === false))
+  })
+
+  it('hides foreign and unknown sessions on delete and permits deleting the current session', async() => {
+    const alice = await login()
+    await getAccountStore().createUser({ username: 'bob', password: 'bob-pass' })
+    const bob = parseJson((await app.inject({ method: 'POST', url: '/api/auth/login', payload: { username: 'bob', password: 'bob-pass' } })).body)
+    const remove = (id: string) => app.inject({ method: 'DELETE', url: `/api/me/sessions/${id}`, headers: { authorization: `Bearer ${alice.accessToken}` } })
+    const foreign = await remove(bob.sessionId)
+    const unknown = await remove('unknown')
+    assert.equal(foreign.statusCode, 404)
+    assert.equal(unknown.statusCode, 404)
+    assert.deepEqual(parseJson(foreign.body), parseJson(unknown.body))
+    assert.equal((await me(bob.accessToken)).statusCode, 200)
+    assert.equal((await refresh(bob.refreshToken)).statusCode, 200)
+    const deleted = await remove(alice.sessionId)
+    assert.equal(deleted.statusCode, 200)
+    assert.deepEqual(parseJson(deleted.body), { ok: true })
+    assert.equal((await me(alice.accessToken)).statusCode, 401)
+    assert.equal((await refresh(alice.refreshToken)).statusCode, 401)
+  })
+
+  it('revokes other sessions once while keeping current and other users working', async() => {
+    const current = await login()
+    const others = [await login(), await login()]
+    const bob = await getAccountStore().createUser({ username: 'bob', password: 'bob-pass' })
+    const bobSession = getAccountStore().sessions.create(bob.id).session
+    const revoke = () => app.inject({ method: 'POST', url: '/api/me/sessions/revoke-others', headers: { authorization: `Bearer ${current.accessToken}` } })
+    const response = await revoke()
+    assert.equal(response.statusCode, 200)
+    assert.deepEqual(parseJson(response.body), { ok: true, revoked: 2 })
+    assert.deepEqual(parseJson((await revoke()).body), { ok: true, revoked: 0 })
+    for (const other of others) {
+      assert.equal((await me(other.accessToken)).statusCode, 401)
+      assert.equal((await refresh(other.refreshToken)).statusCode, 401)
+    }
+    assert.equal((await me(current.accessToken)).statusCode, 200)
+    assert.equal((await refresh(current.refreshToken)).statusCode, 200)
+    assert.ok(getAccountStore().sessions.isActive(bobSession.id, bob.id))
+  })
+
+  it('legacy revoke-others revokes all sessions because there is no current sid', async() => {
+    const sessions = [await login(), await login()]
+    const response = await app.inject({ method: 'POST', url: '/api/me/sessions/revoke-others', headers: { authorization: `Bearer ${sessions[0].token}` } })
+    assert.equal(response.statusCode, 200)
+    assert.deepEqual(parseJson(response.body), { ok: true, revoked: 2 })
+    for (const session of sessions) {
+      assert.equal((await me(session.accessToken)).statusCode, 401)
+      assert.equal((await refresh(session.refreshToken)).statusCode, 401)
+    }
+    assert.equal((await me(sessions[0].token)).statusCode, 200)
+  })
+
+  it('requires authentication for all session management endpoints', async() => {
+    for (const [method, url] of [['GET', '/api/me/sessions'], ['DELETE', '/api/me/sessions/unknown'], ['POST', '/api/me/sessions/revoke-others']] as const) {
+      assert.equal((await app.inject({ method, url })).statusCode, 401)
+    }
+  })
+
   it('rate limits unknown refresh tokens by IP', async() => {
     for (let i = 0; i < AUTH_FAIL_LIMIT; i++) assert.equal((await refresh('unknown')).statusCode, 401)
     assert.equal((await refresh('unknown')).statusCode, 403)
