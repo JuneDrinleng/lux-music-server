@@ -7,6 +7,7 @@ import defaultConfig from './defaultConfig'
 import { ENV_PARAMS, File } from './constants'
 import { checkAndCreateDirSync } from './utils'
 import { initAccountStore } from './account/store'
+import { formatEnvForLog, redactEnv } from './utils/redactEnv'
 
 type ENV_PARAMS_Type = typeof ENV_PARAMS
 type ENV_PARAMS_Value_Type = ENV_PARAMS_Type[number]
@@ -36,7 +37,7 @@ const envParamKeys = Object.values(ENV_PARAMS).filter(v => v != 'LX_USER_')
         }
         return false
       }),
-  ].map(([e, v]) => `${e}: ${v as string}`)
+  ].map(([e, v]) => formatEnvForLog({ [e]: v }))
   if (envLog.length) console.log(`Load env: \n  ${envLog.join('\n  ')}`)
 }
 
@@ -55,7 +56,7 @@ const mergeConfigFileEnv = (config: Partial<Record<ENV_PARAMS_Value_Type, string
     let value = String(v)
     if (envParamKeys.includes(envKey)) {
       if (envParams[envKey] == null) {
-        envLog.push(`${envKey}: ${value}`)
+        envLog.push(formatEnvForLog({ [envKey]: value }))
         envParams[envKey] = value
       }
     } else if (envKey.startsWith('LX_USER_') && value) {
@@ -65,7 +66,7 @@ const mergeConfigFileEnv = (config: Partial<Record<ENV_PARAMS_Value_Type, string
           name,
           password: value,
         })
-        envLog.push(`${envKey}: ${value}`)
+        envLog.push(formatEnvForLog({ [envKey]: value }))
       }
     }
   }
@@ -173,7 +174,7 @@ const checkUserConfig = (users: LX.Config['users']) => {
   const passwords: string[] = []
   for (const user of users) {
     if (userNames.includes(user.name)) exit('User name duplicate: ' + user.name)
-    if (passwords.includes(user.password)) exit('User password duplicate: ' + user.password)
+    if (passwords.includes(user.password)) exit('User password duplicate for user: ' + user.name)
     userNames.push(user.name)
     passwords.push(user.password)
   }
@@ -200,22 +201,9 @@ checkUserConfig(global.lx.config.users)
   }
 }
 
-const shouldLogSyncCodesPlaintext = () => {
-  const flag = process.env.LUX_LOG_SYNC_CODES
-  if (flag == '1' || flag?.toLowerCase() == 'true') return true
-  const debug = process.env.DEBUG
-  return !!debug && debug != '0' && debug.toLowerCase() != 'false'
-}
-
-const maskSyncCode = (code: string) => {
-  if (!code) return '(empty)'
-  if (code.length <= 4) return '****'
-  return `${code.slice(0, 2)}****${code.slice(-2)}`
-}
-
 console.log(`Users:
 ${global.lx.config.users.map(user => {
-  const password = shouldLogSyncCodesPlaintext() ? user.password : maskSyncCode(user.password)
+  const { password } = redactEnv({ password: user.password })
   return `  ${user.name}: ${password}`
 }).join('\n') || '  No User'}
 `)
