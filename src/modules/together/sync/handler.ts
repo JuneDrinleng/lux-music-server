@@ -40,6 +40,10 @@ const handler: TogetherHandler = {
     requireEnabled(socket)
     return getRoomManager().transferHost(socket, req)
   },
+  async 'together:reaction'(socket, req) {
+    requireEnabled(socket)
+    return getRoomManager().reaction(socket, req)
+  },
   async 'together:ping'(socket, req) {
     requireEnabled(socket)
     return getRoomManager().ping(req)

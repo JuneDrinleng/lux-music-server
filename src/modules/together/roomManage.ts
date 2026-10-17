@@ -11,6 +11,7 @@ import {
   isQuality,
   isRecord,
   normalizeInviteCode,
+  normalizeReactionEmoji,
   sanitizeMusicInfo,
 } from './validate'
 
@@ -30,6 +31,7 @@ interface MemberEntry {
   info: Member
   socket: LX.Socket | null
   graceTimer: unknown
+  reactions: number[]
 }
 
 interface Room {
@@ -281,6 +283,28 @@ export class RoomManager {
     return ok(null)
   }
 
+  reaction(socket: LX.Socket, req: unknown): Result<null> {
+    if (!this.getAccount(socket)) return fail('NOT_LUX_ACCOUNT', 'Listen together requires an active Lux account')
+    const found = this.getMembershipOf(this.getDeviceClientId(socket))
+    if (!found || found.member.socket !== socket || !found.member.info.online || !isSocketOpen(socket)) {
+      return fail('NOT_IN_ROOM', 'Not an active member of a room')
+    }
+    const emoji = normalizeReactionEmoji(isRecord(req) ? req.emoji : undefined)
+    if (!emoji) return fail('INVALID_PARAMS', 'emoji must be a supported reaction')
+    const { room, memberId, member } = found
+    const now = this.clock.now()
+    const hits = member.reactions
+    if (isLimited(hits, now, TOGETHER_LIMITS.reactionsPerMinute, TOGETHER_LIMITS.reactionMinuteMs) ||
+      hits.filter(at => at > now - TOGETHER_LIMITS.reactionWindowMs).length >= TOGETHER_LIMITS.reactions) {
+      return fail('RATE_LIMITED', 'Too many reactions (maximum 5 per 3 seconds and 60 per minute)')
+    }
+    hits.push(now)
+    const push: LX.Sync.Together.ReactionPush = { roomId: room.roomId, memberId, displayName: member.info.displayName, emoji, at: now }
+    // Ephemeral: include the sender when opted in; never change room state or versions.
+    broadcastRoom(room, async remote => remote['together:onReaction'](push), undefined, 'together.reaction')
+    return ok(null)
+  }
+
   ping(req: unknown): Result<LX.Sync.Together.PingResult> {
     const t0 = isRecord(req) ? req.t0 : undefined
     if (!isFiniteNumber(t0)) return fail('INVALID_PARAMS', 't0 must be a number')
@@ -392,6 +416,7 @@ export class RoomManager {
       },
       socket,
       graceTimer: null,
+      reactions: [],
     }
   }
 

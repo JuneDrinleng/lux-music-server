@@ -24,9 +24,11 @@ export const broadcastRoom = (
   room: BroadcastTarget,
   fn: (remote: TogetherRemote, memberId: string) => Promise<unknown>,
   exceptMemberId?: string,
+  requiredFeature?: keyof LX.Sync.EnabledFeatures,
 ) => {
   for (const [memberId, member] of room.members) {
     if (memberId == exceptMemberId) continue
+    if (requiredFeature && !member.socket?.feature[requiredFeature]) continue
     sendToSocket(member.socket, remote => fn(remote, memberId))
   }
 }

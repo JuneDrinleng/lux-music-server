@@ -5,7 +5,7 @@ import { modules, playHistoryModule, togetherModule } from '@/modules'
 import { getRoomManager } from '@/modules/together/roomManage'
 import { isSocketOpen } from '../socketState'
 
-type FeatureName = keyof LX.Sync.EnabledFeatures
+type FeatureName = keyof LX.Socket['moduleReadys']
 const featureChanges = new WeakMap<LX.Socket, Partial<Record<FeatureName, object>>>()
 
 const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
@@ -48,6 +48,7 @@ const handler: LX.Sync.ServerSyncHandlerActions<LX.Socket> = {
       schedule('together', !!feature.together, togetherModule.sync)
       if (!feature.together) getRoomManager().handleSocketDisabled(socket)
     }
+    if (feature['together.reaction'] != null) socket.feature['together.reaction'] = !!feature['together.reaction']
     for (const run of pending) await run()
   },
 }

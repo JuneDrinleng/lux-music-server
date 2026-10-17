@@ -561,3 +561,73 @@ describe('together config', () => {
       { maxMembers: 10, maxRooms: 100, graceMs: 30_000 })
   })
 })
+
+
+describe('together rooms: reactions', () => {
+  it('broadcasts only to opted-in sockets, includes the sender, and leaves snapshots unchanged', () => {
+    const { manager, host, room, clock } = setupRoom()
+    const bob = createFakeSocket('c_bob', 'bob')
+    const old = createFakeSocket('c_carol', 'carol')
+    host.feature['together.reaction'] = true
+    bob.feature['together.reaction'] = true
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    unwrap(manager.joinRoom(old, { code: room.code }))
+    host.takePushes(); bob.takePushes(); old.takePushes()
+    const before = unwrap(manager.getRoom(host))
+    unwrap(manager.reaction(bob, { emoji: '❤️', memberId: 'forged', displayName: 'forged', at: 0 }))
+    for (const socket of [host, bob]) {
+      assert.deepEqual(socket.takePushes('together:onReaction').map(p => p.payload), [{
+        roomId: room.roomId, memberId: 'c_bob', displayName: 'bob', emoji: '❤️', at: clock.now(),
+      }])
+    }
+    assert.equal(old.takePushes().length, 0)
+    assert.deepEqual(unwrap(manager.getRoom(host)), before)
+    assert.equal(codeOf(manager.reaction(createFakeSocket('outsider', 'dave'), { emoji: '👍' })), 'NOT_IN_ROOM')
+    manager.handleSocketClosed(bob)
+    assert.equal(codeOf(manager.reaction(bob, { emoji: '👍' })), 'NOT_IN_ROOM')
+    unwrap(manager.closeRoom(host, { roomId: room.roomId }))
+    assert.equal(codeOf(manager.reaction(host, { emoji: '👍' })), 'NOT_IN_ROOM')
+  })
+
+  it('limits each member to 5 per 3 seconds and 60 per minute with sliding expiry', () => {
+    const { manager, host, room, advance } = setupRoom()
+    host.feature['together.reaction'] = true
+    const bob = createFakeSocket('c_bob', 'bob')
+    unwrap(manager.joinRoom(bob, { code: room.code }))
+    host.takePushes()
+    for (let batch = 0; batch < 12; batch++) {
+      for (let i = 0; i < 5; i++) unwrap(manager.reaction(host, { emoji: '🔥' }))
+      assert.equal(host.takePushes('together:onReaction').length, 5)
+      const limited = manager.reaction(host, { emoji: '🔥' })
+      assert.equal(codeOf(limited), 'RATE_LIMITED')
+      if (!limited.ok) assert.match(limited.message, /Too many reactions/)
+      assert.equal(host.takePushes('together:onReaction').length, 0)
+      advance(2999)
+      assert.equal(codeOf(manager.reaction(host, { emoji: '🔥' })), 'RATE_LIMITED')
+      advance(1)
+    }
+    assert.equal(codeOf(manager.reaction(host, { emoji: '🔥' })), 'RATE_LIMITED')
+    unwrap(manager.reaction(bob, { emoji: '👏' }))
+    advance(23_999)
+    assert.equal(codeOf(manager.reaction(host, { emoji: '🔥' })), 'RATE_LIMITED')
+    advance(1)
+    for (let i = 0; i < 5; i++) unwrap(manager.reaction(host, { emoji: '🔥' }))
+    assert.equal(codeOf(manager.reaction(host, { emoji: '🔥' })), 'RATE_LIMITED')
+  })
+
+  it('keeps member identity and rate limits when a credential alias reconnects', () => {
+    const { manager, advance } = createTestManager({}, { c_alias: 'c_host' })
+    const host = createFakeSocket('c_alias', 'alice')
+    unwrap(manager.createRoom(host))
+    for (let i = 0; i < 5; i++) unwrap(manager.reaction(host, { emoji: '🎉' }))
+    manager.handleSocketClosed(host)
+    const replacement = createFakeSocket('c_host', 'alice')
+    replacement.feature['together.reaction'] = true
+    manager.handleSocketReady(replacement)
+    assert.equal(codeOf(manager.reaction(host, { emoji: '🎉' })), 'NOT_IN_ROOM')
+    assert.equal(codeOf(manager.reaction(replacement, { emoji: '🎉' })), 'RATE_LIMITED')
+    advance(3000)
+    unwrap(manager.reaction(replacement, { emoji: '🎉' }))
+    assert.equal(replacement.takePushes('together:onReaction')[0].payload.memberId, 'c_alias')
+  })
+})

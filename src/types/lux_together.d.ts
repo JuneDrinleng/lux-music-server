@@ -86,6 +86,14 @@ declare namespace LX {
         previousHostId: string
         reason: HostChangeReason
       }
+      /** Delivered to opted-in room sockets, including the sender; never persisted. */
+      interface ReactionPush {
+        roomId: string
+        memberId: string
+        displayName: string
+        emoji: string
+        at: number
+      }
       interface RoomClosedPush { roomId: string, reason: CloseReason }
     }
 
@@ -98,12 +106,14 @@ declare namespace LX {
       'together:hostUpdateState': (req: Together.HostUpdateStateRequest) => LuxResult<Together.UpdateAck>
       'together:hostUpdateQueue': (req: Together.HostUpdateQueueRequest) => LuxResult<Together.UpdateAck>
       'together:transferHost': (req: { roomId: string, memberId: string }) => LuxResult<null>
+      'together:reaction': (req: { emoji: string }) => LuxResult<null>
       'together:ping': (req: { t0: number }) => LuxResult<Together.PingResult>
     }>
     type ClientSyncTogetherActions = WarpPromiseRecord<{
       'together:onRoomState': (push: Together.RoomStatePush) => void
       'together:onMemberChanged': (push: Together.MemberChangedPush) => void
       'together:onHostChanged': (push: Together.HostChangedPush) => void
+      'together:onReaction': (push: Together.ReactionPush) => void
       'together:onRoomClosed': (push: Together.RoomClosedPush) => void
     }>
   }

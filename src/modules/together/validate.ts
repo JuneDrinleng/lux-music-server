@@ -1,4 +1,4 @@
-import { INVITE_CODE_REGEXP } from './protocol'
+import { INVITE_CODE_REGEXP, TOGETHER_REACTION_EMOJIS } from './protocol'
 
 const ONLINE_SOURCES = new Set<string>(['kw', 'kg', 'tx', 'wy', 'mg'])
 const QUALITIES = new Set<string>(['128k', '320k', 'flac', 'flac24bit', '192k', 'ape', 'wav'])
@@ -36,4 +36,11 @@ export const normalizeInviteCode = (value: unknown): string | null => {
   if (typeof value != 'string') return null
   const code = value.trim().replace(/\s+/g, '')
   return INVITE_CODE_REGEXP.test(code) ? code : null
+}
+
+/** Reject controls before trimming so even surrounding tabs/newlines are invalid. */
+export const normalizeReactionEmoji = (value: unknown): string | null => {
+  if (typeof value != 'string' || /[\p{Cc}\p{Zl}\p{Zp}]/u.test(value)) return null
+  const emoji = value.trim()
+  return TOGETHER_REACTION_EMOJIS.some(allowed => allowed == emoji) ? emoji : null
 }

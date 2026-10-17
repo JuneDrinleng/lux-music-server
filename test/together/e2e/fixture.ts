@@ -63,6 +63,7 @@ export const createFixture = async() => {
     const users = { host, member }
     const credentials = {
       host: await loginAndGetKey(baseUrl, users.host.username, password, { deviceId: 'host-installation', deviceName: 'Host device' }),
+      old: await loginAndGetKey(baseUrl, users.member.username, password, { deviceId: 'old-installation', deviceName: 'Old device' }),
       member: await loginAndGetKey(baseUrl, users.member.username, password, { deviceId: 'member-installation', deviceName: 'Member device' }),
     }
     let fake = createFakeClock()

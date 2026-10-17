@@ -42,6 +42,8 @@ declare namespace LX {
       playHistory?: false | true
       /** Lux listen together. Absent on legacy LX clients. */
       together?: boolean
+      /** Opt in to ephemeral together:onReaction pushes. */
+      'together.reaction'?: boolean
     }
     type SupportedFeatures = Partial<{ [k in keyof EnabledFeatures]: number } & {
       /** Optional record fields; does not require separate client enablement. */
