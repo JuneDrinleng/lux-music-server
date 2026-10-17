@@ -30,6 +30,7 @@ export const createGate = (): Gate => {
 }
 
 export interface ClientOptions {
+  list?: boolean
   chat?: boolean
   reaction?: boolean
   request?: boolean
@@ -160,7 +161,7 @@ export class TogetherClient {
           recordHandshake('getEnabledFeatures', [serverType, supportedFeatures])
           await options.featuresGate?.wait
           // Feature version 1 is truthy on the legacy EnabledFeatures wire format.
-          return { list: false, dislike: false, playHistory: false, together: 1, ...(options.reaction ? { 'together.reaction': true } : {}), ...(options.request ? { 'together.request': true } : {}), ...(options.chat ? { 'together.chat': true } : {}) }
+          return { list: options.list ?? false, dislike: false, playHistory: false, together: 1, ...(options.reaction ? { 'together.reaction': true } : {}), ...(options.request ? { 'together.request': true } : {}), ...(options.chat ? { 'together.chat': true } : {}) }
         },
         together_sync_finished: async() => {
           recordHandshake('together_sync_finished')
@@ -178,7 +179,7 @@ export class TogetherClient {
         list_sync_get_sync_mode: () => { recordHandshake('list_sync_get_sync_mode'); return 'cancel' },
         list_sync_set_list_data: () => { recordHandshake('list_sync_set_list_data') },
         list_sync_finished: () => { recordHandshake('list_sync_finished') },
-        onListSyncAction: () => { recordHandshake('onListSyncAction') },
+        onListSyncAction: (action: LX.Sync.List.ActionList) => { recordHandshake('onListSyncAction', [action]) },
         'together:onRoomState': (payload: LX.Sync.Together.RoomStatePush) => { recordPush('together:onRoomState', payload) },
         'together:onMemberChanged': (payload: LX.Sync.Together.MemberChangedPush) => { recordPush('together:onMemberChanged', payload) },
         'together:onHostChanged': (payload: LX.Sync.Together.HostChangedPush) => { recordPush('together:onHostChanged', payload) },

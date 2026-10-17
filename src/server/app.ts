@@ -10,7 +10,7 @@ import { registerSyncKeyRevocation } from './server'
 import { registerAdminApi } from './api/admin'
 import { registerAuthApi } from './api/auth'
 import { registerMeApi } from './api/me'
-import { registerPatApi } from './api/pats'
+import { registerPatApi, registerPatHooks } from './api/pats'
 import { registerSyncApi } from './api/sync'
 import { registerTogetherApi } from './api/together'
 import { sendError } from './api/errors'
@@ -90,6 +90,8 @@ export const createApp = (): FastifyInstance => {
     bodyLimit: API_BODY_LIMIT,
     trustProxy: parseTrustProxy(process.env.LUX_TRUST_PROXY),
   })
+
+  registerPatHooks(app)
 
   app.setErrorHandler((error, request, reply) => {
     const statusCode = error.statusCode ?? 500

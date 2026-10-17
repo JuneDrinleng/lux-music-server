@@ -52,6 +52,16 @@ describe('personal access tokens', () => {
     assert.ok(store.lookup(token.token))
     assert.ok(!fs.readdirSync(path.dirname(file())).some(name => name.includes('.tmp-')))
   })
+  it('keeps activity unchanged if atomic persistence fails', t => {
+    const store = new PatStore(file())
+    const token = store.create('user', 'Bot', ['playlist:read'], 'never')
+    const entry = { at: Date.now(), action: 'history.read', summary: 'GET 200', ok: true }
+    store.recordActivity(token.id, entry)
+    t.mock.method(fs, 'renameSync', () => { throw new Error('rename failed') })
+    assert.throws(() => store.recordActivity(token.id, { ...entry, ok: false }), /rename failed/)
+    assert.deepEqual(store.activity(token.id, 'user'), [entry])
+    assert.deepEqual(new PatStore(file()).activity(token.id, 'user'), [entry])
+  })
   it('refuses corrupt stores without replacing them', () => {
     fs.writeFileSync(file(), '{broken')
     assert.throws(() => new PatStore(file()), /Refusing to start/)

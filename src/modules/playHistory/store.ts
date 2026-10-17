@@ -105,6 +105,11 @@ export class PlayHistoryStore {
     })
   }
 
+  read = async() => this.enqueue(() => {
+    this.ensureLoaded()
+    return this.records.map(toPublic)
+  })
+
   private async enqueue<T>(task: () => T): Promise<T> {
     const run = this.tail.then(task, task)
     this.tail = run.then(() => undefined, () => undefined)
@@ -195,6 +200,8 @@ export class PlayHistoryManage {
   constructor(userDataManage: UserDataManage) {
     this.store = new PlayHistoryStore(path.join(userDataManage.userDir, File.playHistoryDir))
   }
+
+  read = async() => this.store.read()
 
   push = async(payload: unknown) => {
     return await this.store.push(payload)

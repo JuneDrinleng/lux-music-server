@@ -488,3 +488,7 @@ export const registerSyncKeyRevocation = (store: AccountStore) => {
     revokeKeys(username, key => scope == 'all' || key.sessionId === undefined, scope == 'all')
   })
 }
+
+export const broadcastListClients: LX.Socket['broadcast'] = handler => {
+  if (wss) for (const client of wss.clients) if (client.readyState == 1) handler(client)
+}

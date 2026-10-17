@@ -12,7 +12,7 @@ import { handleSyncBroadcastFailure } from '@/modules/syncFailure'
 // type listAction = 'list:action'
 
 const handleListAction = async(userName: string, { action, data }: LX.Sync.List.ActionList) => {
-  console.log('handleListAction', userName, action)
+  await getUserSpace(userName).listManage.listDataManage.ready
   switch (action) {
     case 'list_data_overwrite':
       await global.event_list.list_data_overwrite(userName, data, true)
@@ -191,23 +191,24 @@ const handleListAction = async(userName: string, { action, data }: LX.Sync.List.
 //   // }
 // }
 
+/** Shared mutation, snapshot and delivery path for devices and HTTP clients. */
+export const applyListAction = async(userName: string, action: LX.Sync.List.ActionList,
+  broadcast: LX.Socket['broadcast'], originId?: string) => {
+  const key = await handleListAction(userName, action)
+  const { listManage } = getUserSpace(userName)
+  if (originId) await listManage.updateDeviceSnapshotKey(originId, key)
+  broadcast(client => {
+    if (client.keyInfo.clientId == originId || !client.moduleReadys?.list || client.userInfo.name != userName) return
+    void client.remoteQueueList.onListSyncAction(action).then(async() => {
+      await listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
+    }).catch(err => { handleSyncBroadcastFailure(client, 'list', err) })
+  })
+}
+
 const handler: LX.Sync.ServerSyncHandlerListActions<LX.Socket> = {
   async onListSyncAction(socket, action) {
     if (!socket.moduleReadys?.list) return
-    const key = await handleListAction(socket.userInfo.name, action)
-    console.log(key)
-    const userSpace = getUserSpace(socket.userInfo.name)
-    await userSpace.listManage.updateDeviceSnapshotKey(socket.keyInfo.clientId, key)
-    const currentUserName = socket.userInfo.name
-    const currentId = socket.keyInfo.clientId
-    socket.broadcast((client) => {
-      if (client.keyInfo.clientId == currentId || !client.moduleReadys?.list || client.userInfo.name != currentUserName) return
-      void client.remoteQueueList.onListSyncAction(action).then(async() => {
-        return userSpace.listManage.updateDeviceSnapshotKey(client.keyInfo.clientId, key)
-      }).catch(err => {
-        handleSyncBroadcastFailure(client, 'list', err)
-      })
-    })
+    await applyListAction(socket.userInfo.name, action, socket.broadcast, socket.keyInfo.clientId)
   },
 }
 

@@ -5,7 +5,9 @@ import { loadStoreFile } from './storeFile'
 export const PAT_SCOPES = ['playlist:read', 'playlist:write', 'history:read', 'player:control', 'together:request'] as const
 export type PatScope = typeof PAT_SCOPES[number]
 export type PatExpiry = '30d' | '1y' | 'never'
+export interface TokenActivity { at: number, action: string, summary: string, ok: boolean }
 interface Pat {
+  activity?: TokenActivity[]
   id: string
   userId: string
   name: string
@@ -27,6 +29,8 @@ const validStore = (data: unknown): data is { version: 1, tokens: Pat[] } => {
     t && typeof t == 'object' && ['id', 'userId', 'name', 'hash', 'last4'].every(k => typeof t[k] == 'string') &&
     t.name.length >= 1 && t.name.length <= 40 && /^[a-f0-9]{64}$/.test(t.hash) && t.last4.length == 4 &&
     Number.isFinite(t.createdAt) && ['expiresAt', 'lastUsedAt', 'revokedAt'].every(k => t[k] === null || Number.isFinite(t[k])) &&
+    (t.activity === undefined || (Array.isArray(t.activity) && t.activity.length <= 200 && t.activity.every((a: TokenActivity) =>
+      a && Number.isFinite(a.at) && typeof a.action == 'string' && typeof a.summary == 'string' && typeof a.ok == 'boolean'))) &&
     Array.isArray(t.scopes) && t.scopes.length > 0 && t.scopes.every((s: PatScope) => PAT_SCOPES.includes(s)))
 }
 
@@ -68,6 +72,13 @@ export class PatStore {
     const pat = this.data.tokens.find(t => t.hash == hash)
     return pat && pat.revokedAt === null && (pat.expiresAt === null || pat.expiresAt > this.clock())
       ? { ...patMetadata(pat), userId: pat.userId } : null
+  }
+  activity(id: string, userId: string, limit = 50) {
+    const pat = this.data.tokens.find(t => t.id == id && t.userId == userId)
+    return pat ? (pat.activity ?? []).slice(-limit).reverse().map(a => ({ ...a })) : null
+  }
+  recordActivity(id: string, entry: TokenActivity) {
+    this.save(this.data.tokens.map(t => t.id == id ? { ...t, activity: [...(t.activity ?? []), entry].slice(-200) } : t))
   }
   touch(id: string) {
     const time = this.clock()
